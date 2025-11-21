@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
     if (!process.env.API_KEY) {
         setProcessing(prev => ({ 
           ...prev, 
-          error: "Chave da API não encontrada. Configure a variável de ambiente API_KEY no seu servidor (Vercel) ou arquivo .env local." 
+          error: "Chave da API não encontrada. Obtenha sua chave gratuita em: https://aistudio.google.com/app/apikey e configure no arquivo .env ou na Vercel." 
         }));
         return;
     }
@@ -188,7 +188,7 @@ const AppContent: React.FC = () => {
     <div className="max-w-6xl mx-auto px-4 animate-fade-in">
        {/* Error Banner */}
        {processing.error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm">
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm break-words">
             <strong>Erro:</strong> {processing.error}
           </div>
         )}
