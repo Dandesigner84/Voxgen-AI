@@ -1,0 +1,5 @@
+{
+  "name": "VoxGen AI Studio",
+  "description": "A professional-grade Text-to-Speech application powered by Gemini 2.5. Generate lifelike audio with various voices and tonal enhancements.",
+  "requestFramePermissions": []
+}
