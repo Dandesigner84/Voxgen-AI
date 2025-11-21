@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft } from 'lucide-react';
+import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart } from 'lucide-react';
 import VoiceControls from './components/VoiceControls';
 import TextInput from './components/TextInput';
 import AudioList from './components/AudioList';
@@ -202,7 +202,7 @@ const AppContent: React.FC = () => {
              
              <div className="bg-slate-900/30 rounded-2xl p-1 border border-slate-800/50 min-h-[500px]">
                <div className="h-full overflow-y-auto custom-scrollbar max-h-[600px] p-3">
-                  <AudioList items={history} audioContext={audioContextRef.current} />
+                 <AudioList items={history} audioContext={audioContextRef.current} />
                </div>
              </div>
           </div>
@@ -211,27 +211,36 @@ const AppContent: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-indigo-500/30 font-sans">
+    <div className="min-h-screen flex flex-col bg-[#0f172a] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-slate-950 text-slate-200 font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
       {renderHeader()}
-
-      <main className="py-8">
-        {mode === AppMode.Home && <Home onSelectMode={setMode} />}
-        {mode === AppMode.Narration && renderNarrationStudio()}
-        {mode === AppMode.Music && <MusicStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
-        {mode === AppMode.Avatar && <AvatarStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
-        {mode === AppMode.SFX && <SFXStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
-        {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} />}
+      
+      <main className="flex-grow py-8">
+         {mode === AppMode.Home && <Home onSelectMode={setMode} />}
+         {mode === AppMode.Narration && renderNarrationStudio()}
+         {mode === AppMode.Music && <MusicStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
+         {mode === AppMode.Avatar && <AvatarStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
+         {mode === AppMode.SFX && <SFXStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
+         {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} />}
       </main>
+
+      <footer className="border-t border-slate-800/50 bg-slate-900/30 backdrop-blur-sm py-6 mt-auto">
+          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-slate-500">
+             <p>&copy; {new Date().getFullYear()} VoxGen AI Studio. Todos os direitos reservados.</p>
+             <p className="flex items-center gap-1">
+                Criado por <span className="text-indigo-400 font-medium flex items-center gap-1"><Heart size={10} className="fill-indigo-400" /> Daniel de Oliveira</span>
+             </p>
+          </div>
+      </footer>
     </div>
   );
 };
 
 const App: React.FC = () => {
-  return (
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
-  );
+    return (
+        <ErrorBoundary>
+            <AppContent />
+        </ErrorBoundary>
+    );
 };
 
 export default App;
