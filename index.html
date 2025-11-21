@@ -18,9 +18,10 @@
         font-family: 'Inter', sans-serif;
         background-color: #0f172a;
         color: #f8fafc;
-        overscroll-behavior-y: none;
+        overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile app feel */
       }
-
+      
+      /* Custom Scrollbar */
       .custom-scrollbar::-webkit-scrollbar {
         width: 8px;
         height: 8px;
@@ -36,6 +37,7 @@
         background: #64748b; 
       }
 
+      /* Custom Animations */
       @keyframes fade-in {
         0% { opacity: 0; transform: translateY(10px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -56,24 +58,20 @@
         cursor: wait;
       }
     </style>
-
-    <script type="importmap">
-    {
-      "imports": {
-        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-        "react/": "https://aistudiocdn.com/react@^19.2.0/",
-        "react": "https://aistudiocdn.com/react@^19.2.0",
-        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
-        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-        "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
-        "vite": "https://aistudiocdn.com/vite@^7.2.4"
-      }
-    }
-    </script>
-
-    <link rel="stylesheet" href="/index.css">
-  </head>
-
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4"
+  }
+}
+</script>
+</head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
