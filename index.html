@@ -32,12 +32,21 @@
 
       /* Custom Animations */
       @keyframes fade-in {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
       }
       
       .animate-fade-in {
         animation: fade-in 0.6s ease-out forwards;
+        /* Fallback for visibility if animation fails */
+        opacity: 1; 
+      }
+      
+      /* Ensure animation starts from 0 only if supported */
+      @media (prefers-reduced-motion: no-preference) {
+        .animate-fade-in {
+          opacity: 0; /* Start hidden, let animation reveal */
+        }
       }
       
       .cursor-wait {

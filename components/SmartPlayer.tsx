@@ -72,12 +72,17 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     musicSourceNodeRef.current = source;
     gainNodeRef.current = gain;
 
-    // 2. Load YouTube API
+    // 2. Load YouTube API Safely
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
+      
       const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      } else {
+        document.head.appendChild(tag);
+      }
 
       window.onYouTubeIframeAPIReady = () => {
         setIsYoutubeApiReady(true);
@@ -97,23 +102,27 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
   const initYoutubePlayer = () => {
     if (window.YT && !playerRef.current) {
-      playerRef.current = new window.YT.Player('youtube-player', {
-        height: '100%',
-        width: '100%',
-        videoId: '',
-        playerVars: {
-          'playsinline': 1,
-          'controls': 0,
-          'disablekb': 1,
-          'fs': 0,
-          'rel': 0,
-          'origin': window.location.origin
-        },
-        events: {
-          'onReady': () => setIsPlayerReady(true),
-          'onStateChange': onPlayerStateChange
-        }
-      });
+      try {
+        playerRef.current = new window.YT.Player('youtube-player', {
+          height: '100%',
+          width: '100%',
+          videoId: '',
+          playerVars: {
+            'playsinline': 1,
+            'controls': 0,
+            'disablekb': 1,
+            'fs': 0,
+            'rel': 0,
+            'origin': window.location.origin
+          },
+          events: {
+            'onReady': () => setIsPlayerReady(true),
+            'onStateChange': onPlayerStateChange
+          }
+        });
+      } catch (e) {
+        console.error("YouTube API Init Failed", e);
+      }
     }
   };
 

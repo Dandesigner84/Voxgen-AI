@@ -1,5 +1,5 @@
 import React from 'react';
-import { HardHat, Construction, ArrowLeft } from 'lucide-react';
+import { HardHat, Construction } from 'lucide-react';
 
 interface AvatarStudioProps {
   audioContext: AudioContext | null;

@@ -9,12 +9,13 @@ import MusicStudio from './components/MusicStudio';
 import AvatarStudio from './components/AvatarStudio';
 import SFXStudio from './components/SFXStudio';
 import SmartPlayer from './components/SmartPlayer';
+import ErrorBoundary from './components/ErrorBoundary';
 import { AudioItem, ProcessingState, ToneType, VoiceName, AppMode } from './types';
 import { DEFAULT_TEXT } from './constants';
 import { refineText, generateSpeech } from './services/geminiService';
 import { decodeAudioData, addBackgroundMusic } from './utils/audioUtils';
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.Home);
 
   // Narration State
@@ -37,12 +38,16 @@ const App: React.FC = () => {
   const initAudioContext = (): AudioContext => {
     if (!audioContextRef.current) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      // Note: Sample rate is set to 24000 to match Gemini TTS output by default, 
-      // but modern browsers handle resampling well if needed.
-      audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+      try {
+        // Try to set sample rate to 24000 to match Gemini, but fallback if browser refuses
+        audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+      } catch (e) {
+        console.warn("Could not set specific sample rate, falling back to default.", e);
+        audioContextRef.current = new AudioContextClass();
+      }
     }
     if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
+      audioContextRef.current.resume().catch(e => console.warn("Resume failed", e));
     }
     return audioContextRef.current;
   };
@@ -218,6 +223,14 @@ const App: React.FC = () => {
         {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} />}
       </main>
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 };
 
