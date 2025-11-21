@@ -45,11 +45,16 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const [isPlayerReady, setIsPlayerReady] = useState(false); // Combined readiness
   const [isYoutubeApiReady, setIsYoutubeApiReady] = useState(false);
 
+  // Time Tracking
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   // Refs
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const musicSourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const intervalRef = useRef<number | null>(null);
+  const timeTrackerRef = useRef<number | null>(null);
   const isNarratingRef = useRef(false); // Critical for preventing echo
   const narrationSourceNodeRef = useRef<AudioBufferSourceNode | null>(null); // Track active narration to stop it
   
@@ -98,6 +103,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       audio.pause();
       audio.src = '';
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timeTrackerRef.current) clearInterval(timeTrackerRef.current);
       if (narrationSourceNodeRef.current) {
           try { narrationSourceNodeRef.current.stop(); } catch(e) {}
       }
@@ -147,6 +153,8 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     }
 
     setIsPlayerReady(false); // Loading new track...
+    setCurrentTime(0);
+    setDuration(0);
 
     const track = playlist[currentTrackIndex];
     const audio = audioElRef.current;
@@ -155,6 +163,9 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     // Reset everything first
     if (audio) audio.pause();
     if (ytPlayer && typeof ytPlayer.stopVideo === 'function') ytPlayer.stopVideo();
+
+    // Restore volume just in case
+    restoreMusicVolume(0);
 
     if (track.type === 'file') {
        if (audio) {
@@ -199,30 +210,37 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
     // Interval Logic
     if (isPlaying) {
-       // Reset timer initially
+       // Reset timer initially to start counting NOW
        setNextNarrationTime(Date.now() + intervalSeconds * 1000);
        isNarratingRef.current = false;
 
        if (intervalRef.current) clearInterval(intervalRef.current);
        
        intervalRef.current = window.setInterval(() => {
+           // Strict check: Only play if NOT narrating AND time is passed
            if (!isNarratingRef.current && Date.now() >= nextNarrationTime) {
                 playNarration();
            }
-       }, 1000);
+       }, 500); // Check more frequently for strictness
+
+       // Time Tracker
+       if (timeTrackerRef.current) clearInterval(timeTrackerRef.current);
+       timeTrackerRef.current = window.setInterval(() => {
+           updateTimeInfo();
+       }, 500);
+
     } else {
        if (intervalRef.current) clearInterval(intervalRef.current);
+       if (timeTrackerRef.current) clearInterval(timeTrackerRef.current);
        
        // STOP Narration if it is currently playing
        if (narrationSourceNodeRef.current) {
            try {
                narrationSourceNodeRef.current.stop();
-           } catch (e) {
-               // Ignore errors if already stopped
-           }
+           } catch (e) {}
            narrationSourceNodeRef.current = null;
        }
-       // Reset flags - the onended callback (if triggered by stop) or manual reset will handle ducking
+       // Reset flags
        isNarratingRef.current = false;
     }
 
@@ -230,10 +248,29 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
   // If intervalSeconds changes while playing, update the target time
   useEffect(() => {
-      if (isPlaying) {
+      if (isPlaying && !isNarratingRef.current) {
           setNextNarrationTime(Date.now() + intervalSeconds * 1000);
       }
   }, [intervalSeconds]);
+
+  const updateTimeInfo = () => {
+      const track = playlist[currentTrackIndex];
+      if (!track) return;
+
+      let curr = 0;
+      let dur = 0;
+
+      if (track.type === 'file' && audioElRef.current) {
+          curr = audioElRef.current.currentTime;
+          dur = audioElRef.current.duration || 0;
+      } else if (track.type === 'youtube' && playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+          curr = playerRef.current.getCurrentTime();
+          dur = playerRef.current.getDuration();
+      }
+
+      if (!isNaN(curr)) setCurrentTime(curr);
+      if (!isNaN(dur) && dur > 0) setDuration(dur);
+  };
 
   const handleLocalUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -296,13 +333,26 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     }
   };
 
+  const restoreMusicVolume = (fadeTime = 1.0) => {
+      const ctx = initAudioContext();
+      const endNow = ctx.currentTime;
+      const currentTrack = playlist[currentTrackIndex];
+
+      if (currentTrack?.type === 'file' && gainNodeRef.current) {
+        gainNodeRef.current.gain.cancelScheduledValues(endNow);
+        gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, endNow);
+        gainNodeRef.current.gain.linearRampToValueAtTime(1.0, endNow + fadeTime);
+    } else if (currentTrack?.type === 'youtube' && playerRef.current) {
+        if (typeof playerRef.current.setVolume === 'function') {
+            playerRef.current.setVolume(100);
+        }
+    }
+  };
+
   const playNarration = () => {
     // LOCK to prevent echo/loop
     if (isNarratingRef.current) return;
     isNarratingRef.current = true;
-
-    // Force reset next time to infinity temporarily so interval doesn't catch it again
-    setNextNarrationTime(Date.now() + 9999999); 
 
     const ctx = initAudioContext();
     let buffer: AudioBuffer | null = null;
@@ -315,9 +365,8 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     }
 
     if (!buffer) {
-        console.warn("No narration buffer found, skipping.");
         isNarratingRef.current = false;
-        // Retry in 5 seconds if failed
+        // Retry later
         setNextNarrationTime(Date.now() + 5000);
         return;
     }
@@ -326,8 +375,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     const fadeTime = 1.0;
     const now = ctx.currentTime;
 
-    // --- DUCKING LOGIC START ---
-    
+    // --- DUCKING START ---
     if (currentTrack?.type === 'file' && gainNodeRef.current) {
        gainNodeRef.current.gain.cancelScheduledValues(now);
        gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
@@ -343,25 +391,16 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(now + fadeTime);
-    narrationSourceNodeRef.current = source; // Keep reference to stop it later
+    narrationSourceNodeRef.current = source; 
     
     source.onended = () => {
-        // --- DUCKING LOGIC END (RESTORE) ---
-        const endNow = ctx.currentTime;
-        
-        if (currentTrack?.type === 'file' && gainNodeRef.current) {
-            gainNodeRef.current.gain.cancelScheduledValues(endNow);
-            gainNodeRef.current.gain.setValueAtTime(0.15, endNow);
-            gainNodeRef.current.gain.linearRampToValueAtTime(1.0, endNow + fadeTime);
-        } else if (currentTrack?.type === 'youtube' && playerRef.current) {
-            if (typeof playerRef.current.setVolume === 'function') {
-                playerRef.current.setVolume(100);
-            }
-        }
+        // --- RESTORE ---
+        restoreMusicVolume(1.0);
         
         // Unlock and Schedule next
         isNarratingRef.current = false;
         narrationSourceNodeRef.current = null;
+        // Strict interval: Count from now
         setNextNarrationTime(Date.now() + intervalSeconds * 1000);
     };
   };
@@ -375,7 +414,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
           return;
       }
 
-      // Validate Narration setup
       const hasNarration = (narrationSource === 'history' && selectedNarrationId) || (narrationSource === 'upload' && uploadedNarration);
       if (!hasNarration) {
           alert("Atenção: Nenhuma narração selecionada. O player tocará apenas a música.");
@@ -386,17 +424,19 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       setIsPlaying(!isPlaying);
   };
 
-  // Visual Helpers
-  const currentTrack = playlist[currentTrackIndex];
-  const showThumbnail = currentTrack?.type === 'youtube' && currentTrack.thumbnail;
-
   // Format helper
   const formatTime = (secs: number) => {
-      if (secs < 60) return `${secs}s`;
-      const m = Math.floor(secs / 60);
-      const s = secs % 60;
-      return `${m}m ${s}s`;
+      if (!secs || isNaN(secs)) return "00:00";
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = Math.floor(secs % 60);
+      
+      if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      return `${m}:${s.toString().padStart(2, '0')}`;
   };
+
+  const currentTrack = playlist[currentTrackIndex];
+  const showThumbnail = currentTrack?.type === 'youtube' && currentTrack.thumbnail;
 
   return (
     <div className="max-w-6xl mx-auto w-full px-4 animate-fade-in pb-20">
@@ -409,16 +449,14 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
-            {/* LEFT: Playlist Manager (4 cols) */}
+            {/* LEFT: Playlist Manager */}
             <div className="lg:col-span-4 space-y-6">
                 <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 h-full flex flex-col">
                     <h3 className="text-white font-bold mb-4 flex items-center gap-2">
                         <Upload size={18} className="text-cyan-400" /> Gerenciar Playlist
                     </h3>
                     
-                    {/* Inputs */}
                     <div className="space-y-3 mb-4">
-                         {/* File Input */}
                         <div className="border border-dashed border-slate-600 rounded-lg p-3 text-center cursor-pointer hover:bg-slate-800 transition-all relative">
                             <input 
                                 type="file" 
@@ -432,7 +470,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                             </div>
                         </div>
 
-                        {/* YouTube Input */}
                         <div className="flex gap-2">
                             <input 
                                 type="text"
@@ -450,7 +487,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                         </div>
                     </div>
 
-                    {/* List */}
                     <div className="flex-grow overflow-y-auto custom-scrollbar space-y-2 min-h-[200px] border-t border-slate-700/50 pt-3">
                         {playlist.length === 0 && <p className="text-center text-slate-500 text-xs mt-10">Playlist vazia</p>}
                         {playlist.map((track, i) => (
@@ -476,42 +512,50 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                 </div>
             </div>
 
-            {/* CENTER: Player & Visual (5 cols) */}
+            {/* CENTER: Player & Visual */}
             <div className="lg:col-span-5 flex flex-col">
                 <div className="bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center flex-grow shadow-2xl relative overflow-hidden min-h-[400px]">
                     
-                    {/* The Player Circle / Video Container */}
                     <div className={`relative w-64 h-64 rounded-full border-4 flex items-center justify-center mb-8 transition-all duration-500 overflow-hidden bg-black ${isPlaying ? 'border-cyan-400 shadow-[0_0_40px_rgba(34,211,238,0.2)]' : 'border-slate-700'}`}>
                         
-                        {/* Hidden container for YT API initialization, but we move it into view if track is YT */}
                         <div id="youtube-player" className="absolute inset-0 w-full h-full pointer-events-none" style={{ display: currentTrack?.type === 'youtube' ? 'block' : 'none', opacity: 0 }} />
                         
-                        {/* Thumbnail or Video Display */}
                         {showThumbnail ? (
                              <div className="absolute inset-0 w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${currentTrack.thumbnail})` }}>
-                                 {/* Overlay to make it look active */}
                                  {isPlaying && <div className="absolute inset-0 bg-cyan-500/10 animate-pulse" />}
                              </div>
                         ) : (
-                            /* Fallback Icon for MP3s */
                             <div className="flex items-center justify-center w-full h-full bg-slate-900">
                                 <Radio size={64} className={`text-slate-600 ${isPlaying ? 'text-cyan-400 animate-pulse' : ''}`} />
                             </div>
                         )}
                         
-                        {/* Visualizer overlay for style */}
                          {currentTrack?.type !== 'youtube' && isPlaying && <div className="absolute inset-0 bg-cyan-500/10 animate-ping rounded-full" />}
                     </div>
 
                     <h2 className="text-lg font-bold text-white mb-1 max-w-xs truncate px-4">
                         {currentTrack?.name || "Aguardando Playlist..."}
                     </h2>
+                    
+                    {/* Time Display */}
+                    <div className="w-full px-10 mb-6 mt-2">
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                            <span>{formatTime(currentTime)}</span>
+                            <span>-{formatTime(Math.max(0, duration - currentTime))}</span>
+                        </div>
+                        <div className="w-full h-1 bg-slate-700 rounded-full overflow-hidden">
+                            <div 
+                                className="h-full bg-cyan-500 transition-all duration-500" 
+                                style={{ width: `${(currentTime / (duration || 1)) * 100}%` }} 
+                            />
+                        </div>
+                    </div>
+
                     <p className="text-cyan-500 text-[10px] font-bold uppercase tracking-widest mb-8 flex items-center gap-2">
                         {isPlaying ? <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"/> : <span className="w-2 h-2 bg-slate-600 rounded-full"/>}
                         {currentTrack?.type === 'youtube' ? 'YouTube Audio' : 'Local Audio'}
                     </p>
 
-                    {/* Controls */}
                     <div className="flex items-center gap-8">
                         <button 
                             onClick={togglePlayback}
@@ -540,15 +584,10 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                             <SkipForward size={20} />
                         </button>
                     </div>
-                    
-                    {/* Loading Status */}
-                    {!isPlayerReady && playlist.length > 0 && (
-                         <span className="text-xs text-cyan-400 mt-4 animate-pulse">Carregando Player...</span>
-                    )}
                 </div>
             </div>
 
-            {/* RIGHT: Narration Config (3 cols) */}
+            {/* RIGHT: Narration Config */}
             <div className="lg:col-span-3 space-y-6">
                  <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 h-full">
                      <div className="flex justify-between items-center mb-6">
@@ -556,7 +595,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                             <Mic2 size={18} className="text-cyan-400" /> Narração
                         </h3>
                         
-                        {/* Readiness Dot */}
                         {((narrationSource === 'history' && selectedNarrationId) || (narrationSource === 'upload' && uploadedNarration)) ? (
                             <span className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_5px_rgba(34,197,94,0.5)]" title="Narração pronta" />
                         ) : (
@@ -565,7 +603,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                      </div>
 
                      <div className="space-y-6">
-                        {/* Source Selector */}
                         <div className="flex bg-slate-900 rounded-lg p-1">
                             <button 
                                 onClick={() => setNarrationSource('history')}
@@ -577,7 +614,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                             >Upload</button>
                         </div>
 
-                        {/* Content */}
                         {narrationSource === 'history' ? (
                              <div className="space-y-2">
                                 <label className="text-xs text-slate-400 block">Selecionar do VoxGen:</label>
@@ -607,7 +643,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                             </div>
                         )}
 
-                        {/* Timer */}
                         <div className="pt-6 border-t border-slate-700/50">
                             <div className="flex justify-between text-xs font-medium text-slate-300 mb-4">
                                 <span className="flex items-center gap-2"><Clock size={14} /> Intervalo</span>
