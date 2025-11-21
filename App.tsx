@@ -85,8 +85,13 @@ const AppContent: React.FC = () => {
   const handleGenerateNarration = async () => {
     const ctx = initAudioContext();
     if (!text.trim()) return;
+    
+    // Check for API Key availability
     if (!process.env.API_KEY) {
-        setProcessing(prev => ({ ...prev, error: "Chave da API não encontrada." }));
+        setProcessing(prev => ({ 
+          ...prev, 
+          error: "Chave da API não encontrada. Configure a variável de ambiente API_KEY no seu servidor (Vercel) ou arquivo .env local." 
+        }));
         return;
     }
 
