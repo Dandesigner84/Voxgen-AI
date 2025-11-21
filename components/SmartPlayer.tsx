@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Radio, Upload, Play, Pause, SkipForward, Mic2, Clock, Youtube, Trash2, AlertCircle, Loader2 } from 'lucide-react';
 import { AudioItem } from '../types';
@@ -363,6 +364,14 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const currentTrack = playlist[currentTrackIndex];
   const showThumbnail = currentTrack?.type === 'youtube' && currentTrack.thumbnail;
 
+  // Format helper
+  const formatTime = (secs: number) => {
+      if (secs < 60) return `${secs}s`;
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return `${m}m ${s}s`;
+  };
+
   return (
     <div className="max-w-6xl mx-auto w-full px-4 animate-fade-in pb-20">
         <div className="mb-8 text-center">
@@ -576,18 +585,18 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                         <div className="pt-6 border-t border-slate-700/50">
                             <div className="flex justify-between text-xs font-medium text-slate-300 mb-4">
                                 <span className="flex items-center gap-2"><Clock size={14} /> Intervalo</span>
-                                <span className="text-cyan-400">{intervalSeconds}s</span>
+                                <span className="text-cyan-400">{formatTime(intervalSeconds)}</span>
                             </div>
                             <input 
                                 type="range" 
                                 min="5" 
-                                max="60" 
+                                max="180" 
                                 value={intervalSeconds} 
                                 onChange={(e) => setIntervalSeconds(parseInt(e.target.value))}
                                 className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                             />
                             <p className="text-[10px] text-slate-500 mt-2 text-center">
-                                A narração tocará a cada {intervalSeconds} segundos de música.
+                                A narração tocará a cada {formatTime(intervalSeconds)} de música.
                             </p>
                         </div>
                         
