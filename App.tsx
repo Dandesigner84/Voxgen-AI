@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Download, Smartphone } from 'lucide-react';
+import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Smartphone } from 'lucide-react';
+
 import VoiceControls from './components/VoiceControls';
 import TextInput from './components/TextInput';
 import AudioList from './components/AudioList';
@@ -9,9 +10,13 @@ import AvatarStudio from './components/AvatarStudio';
 import SFXStudio from './components/SFXStudio';
 import SmartPlayer from './components/SmartPlayer';
 import ErrorBoundary from './components/ErrorBoundary';
+
 import { AudioItem, ProcessingState, ToneType, VoiceName, AppMode } from './types';
 import { DEFAULT_TEXT } from './constants';
-import { refineText, generateSpeech } from './services/geminiService';
+
+// 🔥 IMPORTAÇÃO NOVA — GEMINI NOVO
+import { refineText, generateSpeech } from './services/gemini';
+
 import { decodeAudioData, addBackgroundMusic } from './utils/audioUtils';
 
 const AppContent: React.FC = () => {
@@ -22,7 +27,7 @@ const AppContent: React.FC = () => {
   const [selectedVoice, setSelectedVoice] = useState<VoiceName>(VoiceName.Kore);
   const [selectedTone, setSelectedTone] = useState<ToneType>(ToneType.Neutral);
   const [useMusic, setUseMusic] = useState(false);
-  
+
   const [history, setHistory] = useState<AudioItem[]>([]);
   const [processing, setProcessing] = useState<ProcessingState>({
     isEnhancing: false,
@@ -30,11 +35,11 @@ const AppContent: React.FC = () => {
     error: null,
   });
 
-  // PWA Install State
+  // PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
 
-  // Audio Context reference
+  // Audio
   const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
@@ -54,10 +59,7 @@ const AppContent: React.FC = () => {
   const handleInstallClick = () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
-    deferredPrompt.userChoice.then((choiceResult: any) => {
-      if (choiceResult.outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      }
+    deferredPrompt.userChoice.finally(() => {
       setDeferredPrompt(null);
       setIsInstallable(false);
     });
@@ -65,43 +67,26 @@ const AppContent: React.FC = () => {
 
   const initAudioContext = (): AudioContext => {
     if (!audioContextRef.current) {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      try {
-        audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
-      } catch (e) {
-        console.warn("Could not set sample rate, using default.", e);
-        audioContextRef.current = new AudioContextClass();
-      }
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      audioContextRef.current = new AC({ sampleRate: 24000 });
     }
     if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume().catch(e => console.warn("Resume failed", e));
+      audioContextRef.current.resume();
     }
     return audioContextRef.current;
   };
 
+  // 🎤 GERAR NARRAÇÃO
   const handleGenerateNarration = async () => {
     const ctx = initAudioContext();
     if (!text.trim()) return;
-
-    // ✔ Correção principal — Checagem da API Key no VITE
-    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
-
-    if (!apiKey) {
-      setProcessing(prev => ({
-        ...prev,
-        error:
-          "Chave da API não encontrada. Obtenha sua chave em: https://aistudio.google.com/app/apikey\n\n" +
-          "No arquivo .env adicione:\nVITE_GOOGLE_API_KEY=SUA_CHAVE_AQUI"
-      }));
-      return;
-    }
 
     setProcessing({ isEnhancing: false, isGeneratingAudio: false, error: null });
 
     try {
       let finalText = text;
 
-      // Quando usar comandos ou música, refinamos primeiro
+      // Refinamento quando necessário
       if (selectedTone !== ToneType.Neutral || useMusic || text.match(/[\[<]/)) {
         setProcessing(prev => ({ ...prev, isEnhancing: true }));
         finalText = await refineText(text, selectedTone, useMusic);
@@ -110,39 +95,43 @@ const AppContent: React.FC = () => {
 
       setProcessing({ isEnhancing: false, isGeneratingAudio: true, error: null });
 
-      const base64Data = await generateSpeech(finalText, selectedVoice);
+      // 🚀 Agora usando o GEMINI NOVO
+      const base64Audio = await generateSpeech(finalText, selectedVoice);
 
-      if (ctx) {
-        const speechBuffer = await decodeAudioData(base64Data, ctx);
-        let finalBuffer = speechBuffer;
+      const speechBuffer = await decodeAudioData(base64Audio, ctx);
+      let finalBuffer = speechBuffer;
 
-        if (useMusic) {
-          finalBuffer = await addBackgroundMusic(speechBuffer, selectedTone, ctx);
-        }
+      if (useMusic) {
+        finalBuffer = await addBackgroundMusic(speechBuffer, selectedTone, ctx);
+      }
 
-        const newItem: AudioItem = {
+      setHistory(prev => [
+        {
           id: crypto.randomUUID(),
           text: finalText,
           voice: selectedVoice,
           audioData: finalBuffer,
           createdAt: new Date(),
-          duration: finalBuffer.duration
-        };
+          duration: finalBuffer.duration,
+        },
+        ...prev,
+      ]);
 
-        setHistory(prev => [newItem, ...prev]);
-      }
-
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
       setProcessing(prev => ({
         ...prev,
-        error: err instanceof Error ? err.message : "Erro inesperado ao gerar áudio."
+        error: err?.message || "Erro inesperado ao gerar áudio.",
       }));
     } finally {
-      setProcessing({ isEnhancing: false, isGeneratingAudio: false, error: null });
+      setProcessing(prev => ({
+        ...prev,
+        isEnhancing: false,
+        isGeneratingAudio: false,
+      }));
     }
   };
 
+  // HEADER
   const renderHeader = () => (
     <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-lg sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
@@ -186,98 +175,87 @@ const AppContent: React.FC = () => {
     </header>
   );
 
-  const renderNarrationStudio = () => (
-    <div className="max-w-6xl mx-auto px-4 animate-fade-in">
-
-      {processing.error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm break-words">
-          <strong>Erro:</strong> {processing.error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-7 space-y-6">
-          <VoiceControls
-            selectedVoice={selectedVoice}
-            onVoiceChange={setSelectedVoice}
-            selectedTone={selectedTone}
-            onToneChange={setSelectedTone}
-            useMusic={useMusic}
-            onMusicChange={setUseMusic}
-          />
-
-          <div className="h-full min-h-[200px]">
-            <TextInput
-              value={text}
-              onChange={setText}
-              disabled={processing.isEnhancing || processing.isGeneratingAudio}
-            />
-          </div>
-
-          <button
-            onClick={handleGenerateNarration}
-            disabled={processing.isEnhancing || processing.isGeneratingAudio || !text.trim()}
-            className={`w-full py-4 rounded-xl font-semibold text-lg flex items-center justify-center gap-3 transition-all duration-300 ${
-              processing.isEnhancing || processing.isGeneratingAudio
-                ? 'bg-slate-800 text-slate-400 cursor-wait'
-                : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/25 hover:scale-[1.01] active:scale-[0.99]'
-            }`}
-          >
-            {processing.isEnhancing ? (
-              <>
-                <Loader2 className="animate-spin" /> Refinando Roteiro...
-              </>
-            ) : processing.isGeneratingAudio ? (
-              <>
-                <Loader2 className="animate-spin" /> Gerando Áudio...
-              </>
-            ) : (
-              <>
-                <Sparkles size={20} className="fill-white/20" /> Gerar Fala
-              </>
-            )}
-          </button>
-        </div>
-
-        <div className="lg:col-span-5 space-y-6">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <PlayCircle size={20} className="text-purple-400" />
-              Áudios Gerados
-            </h2>
-            <span className="text-xs bg-slate-800 px-2 py-1 rounded-full text-slate-400">
-              {history.length} clips
-            </span>
-          </div>
-
-          <div className="bg-slate-900/30 rounded-2xl p-1 border border-slate-800/50 min-h-[500px]">
-            <div className="h-full overflow-y-auto custom-scrollbar max-h-[600px] p-3">
-              <AudioList items={history} audioContext={audioContextRef.current} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen flex flex-col bg-[#0f172a] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0f172a] to-slate-950 text-slate-200 font-sans selection:bg-indigo-500/30 selection:text-indigo-200">
+    <div className="min-h-screen flex flex-col bg-[#0f172a] text-slate-200">
       {renderHeader()}
 
       <main className="flex-grow py-8">
         {mode === AppMode.Home && <Home onSelectMode={setMode} />}
-        {mode === AppMode.Narration && renderNarrationStudio()}
+        {mode === AppMode.Narration && (
+          <div className="max-w-6xl mx-auto px-4">
+            {processing.error && (
+              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm">
+                <strong>Erro:</strong> {processing.error}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-7 space-y-6">
+                <VoiceControls
+                  selectedVoice={selectedVoice}
+                  onVoiceChange={setSelectedVoice}
+                  selectedTone={selectedTone}
+                  onToneChange={setSelectedTone}
+                  useMusic={useMusic}
+                  onMusicChange={setUseMusic}
+                />
+
+                <TextInput value={text} onChange={setText} />
+
+                <button
+                  onClick={handleGenerateNarration}
+                  disabled={processing.isEnhancing || processing.isGeneratingAudio}
+                  className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold flex items-center justify-center gap-3"
+                >
+                  {processing.isEnhancing ? (
+                    <>
+                      <Loader2 className="animate-spin" /> Refinando roteiro...
+                    </>
+                  ) : processing.isGeneratingAudio ? (
+                    <>
+                      <Loader2 className="animate-spin" /> Gerando áudio...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={20} /> Gerar Fala
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="lg:col-span-5 space-y-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <PlayCircle size={20} className="text-purple-400" />
+                    Áudios Gerados
+                  </h2>
+
+                  <span className="text-xs bg-slate-800 px-2 py-1 rounded-full text-slate-400">
+                    {history.length} clips
+                  </span>
+                </div>
+
+                <div className="bg-slate-900/30 rounded-2xl p-1 border border-slate-800/50 min-h-[500px]">
+                  <div className="h-full overflow-y-auto p-3">
+                    <AudioList items={history} audioContext={audioContextRef.current} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {mode === AppMode.Music && <MusicStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
         {mode === AppMode.Avatar && <AvatarStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
         {mode === AppMode.SFX && <SFXStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
-        {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} />}
+        {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} narrationHistory={history} />}
       </main>
 
-      <footer className="border-t border-slate-800/50 bg-slate-900/30 backdrop-blur-sm py-6 mt-auto">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-slate-500">
-          <p>&copy; {new Date().getFullYear()} VoxGen AI Studio. Todos os direitos reservados.</p>
+      <footer className="border-t border-slate-800/50 bg-slate-900/30 py-6 mt-auto text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-6 flex justify-between">
+          <p>&copy; {new Date().getFullYear()} VoxGen AI Studio.</p>
           <p className="flex items-center gap-1">
-            Criado por <span className="text-indigo-400 font-medium flex items-center gap-1"><Heart size={10} className="fill-indigo-400" /> Daniel de Oliveira</span>
+            Criado por <span className="text-indigo-400 font-medium flex items-center gap-1"><Heart size={10} /></span> Daniel de Oliveira
           </p>
         </div>
       </footer>
