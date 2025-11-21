@@ -51,6 +51,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const gainNodeRef = useRef<GainNode | null>(null);
   const intervalRef = useRef<number | null>(null);
   const isNarratingRef = useRef(false); // Critical for preventing echo
+  const narrationSourceNodeRef = useRef<AudioBufferSourceNode | null>(null); // Track active narration to stop it
   
   // YouTube Refs
   const playerRef = useRef<any>(null);
@@ -97,6 +98,9 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       audio.pause();
       audio.src = '';
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (narrationSourceNodeRef.current) {
+          try { narrationSourceNodeRef.current.stop(); } catch(e) {}
+      }
     };
   }, []);
 
@@ -208,6 +212,17 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
        }, 1000);
     } else {
        if (intervalRef.current) clearInterval(intervalRef.current);
+       
+       // STOP Narration if it is currently playing
+       if (narrationSourceNodeRef.current) {
+           try {
+               narrationSourceNodeRef.current.stop();
+           } catch (e) {
+               // Ignore errors if already stopped
+           }
+           narrationSourceNodeRef.current = null;
+       }
+       // Reset flags - the onended callback (if triggered by stop) or manual reset will handle ducking
        isNarratingRef.current = false;
     }
 
@@ -327,7 +342,8 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
-    source.start(now + fadeTime); 
+    source.start(now + fadeTime);
+    narrationSourceNodeRef.current = source; // Keep reference to stop it later
     
     source.onended = () => {
         // --- DUCKING LOGIC END (RESTORE) ---
@@ -345,6 +361,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
         
         // Unlock and Schedule next
         isNarratingRef.current = false;
+        narrationSourceNodeRef.current = null;
         setNextNarrationTime(Date.now() + intervalSeconds * 1000);
     };
   };
