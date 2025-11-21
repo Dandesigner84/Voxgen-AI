@@ -1,9 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="VoxGen AI - Crie narrações, músicas e efeitos sonoros com IA.">
     <title>VoxGen AI Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -12,6 +18,7 @@
         font-family: 'Inter', sans-serif;
         background-color: #0f172a;
         color: #f8fafc;
+        overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile app feel */
       }
       
       /* Custom Scrollbar */
@@ -38,14 +45,12 @@
       
       .animate-fade-in {
         animation: fade-in 0.6s ease-out forwards;
-        /* Fallback for visibility if animation fails */
         opacity: 1; 
       }
       
-      /* Ensure animation starts from 0 only if supported */
       @media (prefers-reduced-motion: no-preference) {
         .animate-fade-in {
-          opacity: 0; /* Start hidden, let animation reveal */
+          opacity: 0; 
         }
       }
       

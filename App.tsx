@@ -1,6 +1,6 @@
 
-import React, { useState, useRef } from 'react';
-import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Download, Smartphone } from 'lucide-react';
 import VoiceControls from './components/VoiceControls';
 import TextInput from './components/TextInput';
 import AudioList from './components/AudioList';
@@ -31,8 +31,38 @@ const AppContent: React.FC = () => {
     error: null,
   });
 
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
   // Audio Context management
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult: any) => {
+      if (choiceResult.outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      }
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+    });
+  };
 
   // Returns the context so it can be used immediately in event handlers
   const initAudioContext = (): AudioContext => {
@@ -124,14 +154,27 @@ const AppContent: React.FC = () => {
             </p>
           </div>
         </div>
-        {mode !== AppMode.Home && (
-          <button 
-             onClick={() => setMode(AppMode.Home)}
-             className="text-sm text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
-          >
-             <ArrowLeft size={16} /> Voltar ao Início
-          </button>
-        )}
+        
+        <div className="flex items-center gap-4">
+            {isInstallable && (
+                <button 
+                    onClick={handleInstallClick}
+                    className="hidden md:flex items-center gap-2 bg-slate-800 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-full text-xs font-medium transition-all animate-pulse border border-slate-700"
+                >
+                    <Smartphone size={14} />
+                    Instalar App
+                </button>
+            )}
+
+            {mode !== AppMode.Home && (
+            <button 
+                onClick={() => setMode(AppMode.Home)}
+                className="text-sm text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
+            >
+                <ArrowLeft size={16} /> Voltar ao Início
+            </button>
+            )}
+        </div>
       </div>
     </header>
   );
