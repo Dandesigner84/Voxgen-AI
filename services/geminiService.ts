@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { ToneType, VoiceName } from "../types";
 
 // Initialize API client
@@ -71,7 +71,7 @@ export const generateSpeech = async (text: string, voice: VoiceName): Promise<st
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text: text }] }],
     config: {
-      responseModalities: ['AUDIO'], 
+      responseModalities: [Modality.AUDIO], 
       speechConfig: {
         voiceConfig: {
           prebuiltVoiceConfig: { voiceName: voice },
