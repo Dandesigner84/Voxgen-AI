@@ -41,7 +41,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   // Controls
   const [isPlaying, setIsPlaying] = useState(false);
   const [intervalSeconds, setIntervalSeconds] = useState(15);
-  const [nextNarrationTime, setNextNarrationTime] = useState(0);
   const [isPlayerReady, setIsPlayerReady] = useState(false); // Combined readiness
   const [isYoutubeApiReady, setIsYoutubeApiReady] = useState(false);
 
@@ -55,9 +54,13 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const gainNodeRef = useRef<GainNode | null>(null);
   const intervalRef = useRef<number | null>(null);
   const timeTrackerRef = useRef<number | null>(null);
-  const isNarratingRef = useRef(false); // Critical for preventing echo
-  const narrationSourceNodeRef = useRef<AudioBufferSourceNode | null>(null); // Track active narration to stop it
   
+  // Logic Refs (Critical for timing)
+  const isNarratingRef = useRef(false); // Prevent overlap
+  const narrationSourceNodeRef = useRef<AudioBufferSourceNode | null>(null); // Track active narration to stop it
+  const nextNarrationTimeRef = useRef(0); // Timestamp for next narration
+  const intervalSecondsRef = useRef(intervalSeconds); // Mirror state to avoid stale closure
+
   // YouTube Refs
   const playerRef = useRef<any>(null);
 
@@ -109,6 +112,11 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       }
     };
   }, []);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    intervalSecondsRef.current = intervalSeconds;
+  }, [intervalSeconds]);
 
   const initYoutubePlayer = () => {
     if (window.YT && !playerRef.current) {
@@ -210,18 +218,18 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
     // Interval Logic
     if (isPlaying) {
-       // Reset timer initially to start counting NOW
-       setNextNarrationTime(Date.now() + intervalSeconds * 1000);
+       // Set initial next narration time
+       nextNarrationTimeRef.current = Date.now() + (intervalSecondsRef.current * 1000);
        isNarratingRef.current = false;
 
        if (intervalRef.current) clearInterval(intervalRef.current);
        
        intervalRef.current = window.setInterval(() => {
            // Strict check: Only play if NOT narrating AND time is passed
-           if (!isNarratingRef.current && Date.now() >= nextNarrationTime) {
+           if (!isNarratingRef.current && Date.now() >= nextNarrationTimeRef.current) {
                 playNarration();
            }
-       }, 500); // Check more frequently for strictness
+       }, 500); // Check frequently
 
        // Time Tracker
        if (timeTrackerRef.current) clearInterval(timeTrackerRef.current);
@@ -246,10 +254,11 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
   }, [isPlaying]);
 
-  // If intervalSeconds changes while playing, update the target time
+  // If intervalSeconds changes while playing, update the target time dynamically
   useEffect(() => {
       if (isPlaying && !isNarratingRef.current) {
-          setNextNarrationTime(Date.now() + intervalSeconds * 1000);
+          // If user changes slider, reset the timer relative to now to avoid instant triggers
+          nextNarrationTimeRef.current = Math.max(nextNarrationTimeRef.current, Date.now() + 5000);
       }
   }, [intervalSeconds]);
 
@@ -367,7 +376,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     if (!buffer) {
         isNarratingRef.current = false;
         // Retry later
-        setNextNarrationTime(Date.now() + 5000);
+        nextNarrationTimeRef.current = Date.now() + 5000;
         return;
     }
 
@@ -397,11 +406,12 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
         // --- RESTORE ---
         restoreMusicVolume(1.0);
         
-        // Unlock and Schedule next
+        // Unlock and Schedule next using REF to get fresh interval value
         isNarratingRef.current = false;
         narrationSourceNodeRef.current = null;
-        // Strict interval: Count from now
-        setNextNarrationTime(Date.now() + intervalSeconds * 1000);
+        
+        // Strict interval: Count from NOW (end of narration)
+        nextNarrationTimeRef.current = Date.now() + (intervalSecondsRef.current * 1000);
     };
   };
 
