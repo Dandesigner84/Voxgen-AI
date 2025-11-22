@@ -88,9 +88,14 @@ const AppContent: React.FC = () => {
     
     // Check for API Key availability
     if (!process.env.API_KEY) {
+        const isVercel = window.location.hostname.includes('vercel');
+        const errorMsg = isVercel 
+            ? "Chave da API não encontrada na Vercel. Vá em Settings > Environment Variables, adicione API_KEY=sua_chave e faça o REDEPLOY."
+            : "Chave da API não encontrada. Crie o arquivo .env com API_KEY=suachave e REINICIE O SERVIDOR (Ctrl+C -> npm run dev).";
+        
         setProcessing(prev => ({ 
           ...prev, 
-          error: "Chave da API não encontrada. Crie o arquivo .env com API_KEY=suachave e REINICIE O SERVIDOR (Ctrl+C -> npm run dev)." 
+          error: errorMsg
         }));
         return;
     }
@@ -188,8 +193,19 @@ const AppContent: React.FC = () => {
     <div className="max-w-6xl mx-auto px-4 animate-fade-in">
        {/* Error Banner */}
        {processing.error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm break-words">
-            <strong>Erro:</strong> {processing.error}
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-200 text-sm break-words flex flex-col gap-2">
+            <strong>Erro:</strong> 
+            <span>{processing.error}</span>
+            {processing.error.includes('Vercel') && (
+                <a href="https://vercel.com/docs/projects/environment-variables" target="_blank" rel="noopener noreferrer" className="underline text-red-300 hover:text-white">
+                    Como configurar Variáveis na Vercel
+                </a>
+            )}
+             {processing.error.includes('.env') && (
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="underline text-red-300 hover:text-white">
+                    Obter Chave Gratuita
+                </a>
+            )}
           </div>
         )}
 
