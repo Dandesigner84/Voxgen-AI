@@ -204,11 +204,11 @@ const MusicStudio: React.FC<MusicStudioProps> = ({ audioContext, initAudioContex
                         type="file" 
                         ref={fileInputRef} 
                         onChange={handleFileChange} 
-                        accept="audio/mp3,audio/wav,audio/mpeg" 
+                        accept=".mp3,.wav,.m4a,.aac,audio/*" 
                         className="hidden" 
                       />
                       <Mic2 size={32} className="text-pink-400 mb-3" />
-                      <h4 className="text-white font-medium mb-1">{uploadedFile ? uploadedFile.name : "Upload A Capella (MP3/WAV)"}</h4>
+                      <h4 className="text-white font-medium mb-1">{uploadedFile ? uploadedFile.name : "Upload A Capella (MP3/WAV/M4A)"}</h4>
                       <p className="text-xs text-slate-500">{uploadedFile ? "Clique para alterar" : "Arraste ou clique para selecionar"}</p>
                    </div>
 

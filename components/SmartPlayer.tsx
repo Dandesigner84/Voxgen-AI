@@ -385,13 +385,14 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
     const now = ctx.currentTime;
 
     // --- DUCKING START ---
+    // CRITICAL IOS FIX: Reduced volume to 5% (0.05) for better visibility
     if (currentTrack?.type === 'file' && gainNodeRef.current) {
        gainNodeRef.current.gain.cancelScheduledValues(now);
        gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
-       gainNodeRef.current.gain.linearRampToValueAtTime(0.15, now + fadeTime);
+       gainNodeRef.current.gain.linearRampToValueAtTime(0.05, now + fadeTime);
     } else if (currentTrack?.type === 'youtube' && playerRef.current) {
        if (typeof playerRef.current.setVolume === 'function') {
-           playerRef.current.setVolume(15);
+           playerRef.current.setVolume(5);
        }
     }
 
@@ -471,7 +472,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                             <input 
                                 type="file" 
                                 multiple 
-                                accept="audio/*" 
+                                accept=".mp3,.wav,.m4a,.aac,audio/*" 
                                 onChange={handleLocalUpload}
                                 className="absolute inset-0 opacity-0 cursor-pointer" 
                             />
@@ -646,7 +647,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                                 <label className="text-xs text-slate-400 block">Arquivo de Voz:</label>
                                 <input 
                                     type="file"
-                                    accept="audio/*"
+                                    accept=".mp3,.wav,.m4a,.aac,audio/*"
                                     onChange={handleNarrationUpload}
                                     className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-cyan-900 file:text-cyan-200 hover:file:bg-cyan-800 cursor-pointer"
                                 />

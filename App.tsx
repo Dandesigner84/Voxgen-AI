@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
     if (!process.env.API_KEY) {
         setProcessing(prev => ({ 
           ...prev, 
-          error: "Chave da API não encontrada. Obtenha sua chave gratuita em: https://aistudio.google.com/app/apikey e configure no arquivo .env ou na Vercel." 
+          error: "Chave da API não encontrada. Crie o arquivo .env com API_KEY=suachave e REINICIE O SERVIDOR (Ctrl+C -> npm run dev)." 
         }));
         return;
     }
