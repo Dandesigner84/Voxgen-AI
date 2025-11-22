@@ -4,6 +4,7 @@ import { ToneType, VoiceName } from "../types";
 
 // Inicializa cliente com limpeza da chave (remove aspas e espaços)
 const getClient = () => {
+  // Tenta pegar de várias fontes possíveis injetadas pelo Vite
   const rawKey = process.env.API_KEY || "";
   const cleanKey = rawKey.replace(/["'\s]/g, ""); 
   return new GoogleGenAI({ apiKey: cleanKey });
@@ -81,8 +82,20 @@ export const generateSpeech = async (text: string, voice: VoiceName): Promise<st
     return base64Audio;
   } catch (e: any) {
     console.error("TTS Error:", e);
-    if (e.toString().includes("400")) throw new Error("Erro 400: Verifique se sua API Key é válida.");
-    if (e.toString().includes("429")) throw new Error("Erro 429: Muitos pedidos. Aguarde um pouco.");
+    const errStr = e.toString().toLowerCase();
+
+    // Tratamento específico para erro de Chave Vazada (Leaked Key)
+    if (errStr.includes("leaked") || (errStr.includes("permission_denied") && errStr.includes("key"))) {
+        throw new Error("SUA CHAVE API FOI BLOQUEADA PELO GOOGLE. Motivo: Vazamento de segurança detectado. Por favor, gere uma NOVA chave em aistudio.google.com e atualize sua Vercel/env.");
+    }
+
+    if (errStr.includes("400") || errStr.includes("invalid_argument")) throw new Error("Erro 400: Chave API inválida ou configuração incorreta.");
+    if (errStr.includes("403")) throw new Error("Erro 403: Permissão negada. Verifique sua Chave API.");
+    if (errStr.includes("429")) throw new Error("Erro 429: Muitos pedidos (Cota excedida). Aguarde um pouco.");
+    
+    // Se a mensagem de erro vier do objeto JSON do Google
+    if (e.message) throw new Error(`Erro da API: ${e.message}`);
+
     throw e;
   }
 };
