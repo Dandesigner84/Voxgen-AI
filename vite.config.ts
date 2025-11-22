@@ -8,11 +8,14 @@ export default defineConfig(({ mode }) => {
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, (process as any).cwd(), '');
 
+  // Prioritize the key configured in Vercel (based on your screenshot) or .env
+  const apiKey = env.API_KEY || env.VITE_API_KEY || env.VITE_GOOGLE_API_KEY || env.GOOGLE_API_KEY || '';
+
   return {
     plugins: [react()],
     define: {
       // This ensures process.env.API_KEY is replaced with the actual string value during build/serve
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      'process.env.API_KEY': JSON.stringify(apiKey),
     },
   };
 });
