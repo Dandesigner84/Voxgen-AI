@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Smartphone, Play, Square, Volume2 } from 'lucide-react';
+import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Smartphone, Play, Square, Volume2, LogOut, User as UserIcon } from 'lucide-react';
 import VoiceControls from './components/VoiceControls';
 import TextInput from './components/TextInput';
 import AudioList from './components/AudioList';
@@ -11,15 +11,19 @@ import SFXStudio from './components/SFXStudio';
 import SmartPlayer from './components/SmartPlayer';
 import MangaStudio from './components/MangaStudio';
 import AdminPanel from './components/AdminPanel';
+import AuthScreen from './components/AuthScreen';
 import ErrorBoundary from './components/ErrorBoundary';
-import { AudioItem, ProcessingState, ToneType, VoiceName, AppMode } from './types';
+import { AudioItem, ProcessingState, ToneType, VoiceName, AppMode, User } from './types';
 import { DEFAULT_TEXT } from './constants';
 import { refineText, generateSpeech } from './services/geminiService';
 import { decodeAudioData, addBackgroundMusic } from './utils/audioUtils';
 import { canGenerateNarration, incrementUsage } from './services/monetizationService';
+import { getCurrentUser, logout } from './services/authService';
 
 const AppContent: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.Home);
+  const [user, setUser] = useState<User | null>(null);
+  
   const [text, setText] = useState(DEFAULT_TEXT);
   const [selectedVoice, setSelectedVoice] = useState<VoiceName>(VoiceName.Kore);
   const [selectedTone, setSelectedTone] = useState<ToneType>(ToneType.Neutral);
@@ -29,15 +33,21 @@ const AppContent: React.FC = () => {
     isEnhancing: false, isGeneratingAudio: false, error: null,
   });
   
-  // Preview State
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const previewSourceRef = useRef<AudioBufferSourceNode | null>(null);
-
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // PWA State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
   useEffect(() => {
+    // Check User Session
+    const currentUser = getCurrentUser();
+    if (currentUser) {
+      setUser(currentUser);
+    }
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -54,6 +64,29 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleLogout = () => {
+    logout();
+    setUser(null);
+    setMode(AppMode.Home);
+  };
+
+  const handleLoginSuccess = () => {
+    const currentUser = getCurrentUser();
+    setUser(currentUser);
+    setMode(AppMode.Home);
+  };
+
+  const navigateToMode = (newMode: AppMode) => {
+    // Auth Guard for Protected Routes
+    if (newMode === AppMode.Admin) {
+      if (!user || user.role !== 'admin') {
+        alert("Acesso restrito a administradores.");
+        return;
+      }
+    }
+    setMode(newMode);
+  };
+
   const initAudioContext = (): AudioContext => {
     if (!audioContextRef.current) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -67,64 +100,41 @@ const AppContent: React.FC = () => {
     if (previewSourceRef.current) {
       try {
         previewSourceRef.current.stop();
-      } catch (e) {
-        // Ignore if already stopped
-      }
+      } catch (e) { }
       previewSourceRef.current = null;
     }
     setIsPlayingPreview(false);
   };
 
   const handlePreviewNarration = async () => {
-    // If currently playing preview, stop it
     if (isPlayingPreview) {
       stopPreview();
       return;
     }
-
     if (!text.trim()) return;
 
     const ctx = initAudioContext();
-    
-    if (!process.env.API_KEY) {
-        alert("ERRO: Chave API não encontrada.");
-        return;
-    }
+    if (!process.env.API_KEY) { alert("ERRO: Chave API não encontrada."); return; }
 
     setIsPlayingPreview(true);
-
     try {
-      // 1. Create Snippet (Max 150 chars, smart truncate at word boundary)
       let previewText = text;
       if (text.length > 150) {
         const truncated = text.slice(0, 150);
         const lastSpace = truncated.lastIndexOf(' ');
         previewText = (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated) + "...";
       }
-
-      // 2. Refine snippet if tone is selected (to hear the style)
       if (selectedTone !== ToneType.Neutral) {
-         // Quick refinement for preview
          previewText = await refineText(previewText, selectedTone, false);
       }
-
-      // 3. Generate Audio
       const base64Data = await generateSpeech(previewText, selectedVoice);
       const buffer = await decodeAudioData(base64Data, ctx);
-
-      // 4. Play directly
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
-      
-      source.onended = () => {
-        setIsPlayingPreview(false);
-        previewSourceRef.current = null;
-      };
-
+      source.onended = () => { setIsPlayingPreview(false); previewSourceRef.current = null; };
       source.start(0);
       previewSourceRef.current = source;
-
     } catch (err: any) {
       console.error("Preview Error:", err);
       alert("Erro no preview: " + (err.message || "Tente novamente"));
@@ -133,49 +143,35 @@ const AppContent: React.FC = () => {
   };
 
   const handleGenerateNarration = async () => {
-    // Stop any running preview
     stopPreview();
-
-    // CHECK FREEMIUM LIMITS
     const limitCheck = canGenerateNarration();
     if (!limitCheck.allowed) {
       alert(limitCheck.message);
       return;
     }
-
     const ctx = initAudioContext();
-    
     if (!process.env.API_KEY) {
         const msg = "ERRO: Chave API não encontrada. Configure no .env ou Vercel e REINICIE o servidor.";
         setProcessing(prev => ({ ...prev, error: msg }));
         alert(msg);
         return;
     }
-
     setProcessing({ isEnhancing: false, isGeneratingAudio: false, error: null });
-
     try {
       let finalText = text;
-
-      // Passo 1: Refinar Texto (Opcional)
       if (selectedTone !== ToneType.Neutral || useMusic || text.match(/[\[<]/)) {
         setProcessing(prev => ({ ...prev, isEnhancing: true }));
         finalText = await refineText(text, selectedTone, useMusic);
         setText(finalText);
       }
-
-      // Passo 2: Gerar Áudio
       setProcessing({ isEnhancing: false, isGeneratingAudio: true, error: null });
       const base64Data = await generateSpeech(finalText, selectedVoice);
-
-      // Passo 3: Decodificar e Mixar
       if (ctx) {
         const speechBuffer = await decodeAudioData(base64Data, ctx);
         let finalBuffer = speechBuffer;
         if (useMusic) {
           finalBuffer = await addBackgroundMusic(speechBuffer, selectedTone, ctx);
         }
-
         const newItem: AudioItem = {
           id: crypto.randomUUID(),
           text: finalText,
@@ -185,8 +181,6 @@ const AppContent: React.FC = () => {
           duration: finalBuffer.duration
         };
         setHistory(prev => [newItem, ...prev]);
-        
-        // Register Usage
         incrementUsage();
       }
     } catch (err: any) {
@@ -205,19 +199,47 @@ const AppContent: React.FC = () => {
       <header className="bg-slate-900/50 backdrop-blur-lg sticky top-0 z-50 p-4 border-b border-slate-800 flex justify-between items-center">
           <div onClick={() => setMode(AppMode.Home)} className="flex items-center gap-2 cursor-pointer">
               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><Mic size={20}/></div>
-              <h1 className="font-bold text-lg">VoxGen AI</h1>
+              <h1 className="font-bold text-lg hidden md:block">VoxGen AI</h1>
           </div>
-          <div className="flex gap-2">
-            {isInstallable && <button onClick={handleInstallClick} className="bg-slate-800 px-3 py-1 rounded-full text-xs flex items-center gap-2"><Smartphone size={14}/> Instalar</button>}
-            {mode !== AppMode.Home && <button onClick={() => setMode(AppMode.Home)} className="text-slate-400 text-sm flex items-center"><ArrowLeft size={16}/> Voltar</button>}
+          
+          <div className="flex items-center gap-3">
+            {isInstallable && <button onClick={handleInstallClick} className="bg-slate-800 px-3 py-1 rounded-full text-xs flex items-center gap-2"><Smartphone size={14}/> <span className="hidden sm:inline">Instalar App</span></button>}
+            
+            {user ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-slate-800/50 pr-3 rounded-full border border-slate-700">
+                  <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full bg-slate-700" />
+                  <span className="text-sm font-medium hidden sm:block">{user.name}</span>
+                </div>
+                <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-red-400 transition-colors" title="Sair">
+                  <LogOut size={18} />
+                </button>
+              </div>
+            ) : (
+              mode !== AppMode.Auth && (
+                <button 
+                  onClick={() => setMode(AppMode.Auth)} 
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                >
+                  Entrar
+                </button>
+              )
+            )}
+
+            {mode !== AppMode.Home && mode !== AppMode.Auth && (
+              <button onClick={() => setMode(AppMode.Home)} className="ml-2 text-slate-400 text-sm flex items-center gap-1 hover:text-white">
+                <ArrowLeft size={16}/> <span className="hidden sm:inline">Voltar</span>
+              </button>
+            )}
           </div>
       </header>
       
       <main className="flex-grow py-8">
-         {mode === AppMode.Home && <Home onSelectMode={setMode} />}
+         {mode === AppMode.Auth && <AuthScreen onLoginSuccess={handleLoginSuccess} onNavigateBack={() => setMode(AppMode.Home)} />}
+         {mode === AppMode.Home && <Home onSelectMode={navigateToMode} user={user} />}
          {mode === AppMode.Admin && <AdminPanel />}
          {mode === AppMode.Narration && (
-            <div className="max-w-6xl mx-auto px-4">
+            <div className="max-w-6xl mx-auto px-4 animate-fade-in">
                 {processing.error && (
                     <div className="bg-red-900/20 border border-red-500 text-red-200 p-4 rounded-xl mb-4 text-sm">
                         {processing.error}
@@ -227,8 +249,6 @@ const AppContent: React.FC = () => {
                     <div className="lg:col-span-7 space-y-6">
                         <VoiceControls selectedVoice={selectedVoice} onVoiceChange={setSelectedVoice} selectedTone={selectedTone} onToneChange={setSelectedTone} useMusic={useMusic} onMusicChange={setUseMusic} />
                         <div className="min-h-[200px]"><TextInput value={text} onChange={setText} disabled={processing.isGeneratingAudio} /></div>
-                        
-                        {/* Action Buttons */}
                         <div className="flex gap-4">
                             <button 
                               onClick={handlePreviewNarration} 
@@ -239,12 +259,8 @@ const AppContent: React.FC = () => {
                                   : 'bg-slate-800 border-slate-700 text-indigo-300 hover:bg-slate-700 hover:border-indigo-500/50'
                               }`}
                             >
-                                {isPlayingPreview 
-                                  ? <><Square size={18} fill="currentColor" /> Parar Preview</> 
-                                  : <><Play size={18} /> Ouvir Trecho</>
-                                }
+                                {isPlayingPreview ? <><Square size={18} fill="currentColor" /> Parar Preview</> : <><Play size={18} /> Ouvir Trecho</>}
                             </button>
-
                             <button 
                               onClick={handleGenerateNarration} 
                               disabled={processing.isGeneratingAudio || !text.trim() || isPlayingPreview} 
