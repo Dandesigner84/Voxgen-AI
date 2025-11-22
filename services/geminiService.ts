@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { ToneType, VoiceName } from "../types";
 
@@ -100,19 +99,53 @@ export const generateSpeech = async (text: string, voice: VoiceName): Promise<st
   }
 };
 
-// --- Music & Avatar Services (Stubs for compilation) ---
+// --- Music Generation Services ---
 
-export const generateSongMetadata = async (description: string): Promise<any> => {
+export const generateSongMetadata = async (description: string, userLyrics?: string): Promise<any> => {
   const ai = getClient();
+  
+  let prompt = "";
+  if (userLyrics) {
+    // User provided lyrics, we need Title and Style matching lyrics
+    prompt = `
+      Analise a letra da música abaixo e a descrição de estilo "${description}".
+      Gere um metadado JSON contendo:
+      - title: Um título criativo para a música.
+      - styleTag: Uma tag de estilo musical curta em inglês (ex: 'Lo-fi', 'Heavy Metal', 'Pop', 'Jazz').
+      - coverColor: Uma cor hex (ex: #FF5500) que combine com a emoção da música.
+      - lyrics: Retorne a letra original do usuário intacta.
+
+      Letra do Usuário:
+      "${userLyrics.substring(0, 2000)}..."
+    `;
+  } else {
+    // Generate everything from scratch
+    prompt = `
+      Gere metadados JSON para uma nova música baseada na descrição: "${description}".
+      Schema:
+      - title: Título criativo.
+      - lyrics: Letra da música em PT-BR (2 estrofes e refrão).
+      - styleTag: Estilo musical em inglês (ex: 'Electronic', 'Rock', 'Ambient').
+      - coverColor: Cor hex.
+    `;
+  }
+
   try {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `Gere metadados JSON para música sobre: ${description}. Schema: {title, lyrics, styleTag, coverColor}`,
+        contents: prompt,
         config: { responseMimeType: "application/json" }
       });
       return JSON.parse(response.text || "{}");
-  } catch {
-      return { title: "Erro", lyrics: "...", styleTag: "Ambient", coverColor: "#000" };
+  } catch (e) {
+      console.error("Metadata gen failed", e);
+      // Fallback seguro
+      return { 
+        title: "Nova Música", 
+        lyrics: userLyrics || "Erro ao gerar letra...", 
+        styleTag: "Ambient", 
+        coverColor: "#334155" 
+      };
   }
 };
 

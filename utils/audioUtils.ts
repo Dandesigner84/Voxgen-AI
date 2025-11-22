@@ -787,32 +787,37 @@ async function generateLofiTrack(ctx: OfflineAudioContext, dest: AudioNode, dura
     
     const chordDur = (60/bpm) * 4; // 1 bar
     for(let t=0; t<duration; t+=chordDur) {
-       const chord = progression[(t/chordDur)%progression.length];
-       chord.forEach(freq => {
-          const osc = ctx.createOscillator();
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(0.04, t + 0.1);
-          g.gain.setValueAtTime(0.04, t + chordDur - 0.5);
-          g.gain.linearRampToValueAtTime(0, t + chordDur);
-          
-          // Tremolo
-          const lfo = ctx.createOscillator();
-          lfo.frequency.value = randomRange(3, 6);
-          const lfoG = ctx.createGain();
-          lfoG.gain.value = 0.01;
-          lfo.connect(lfoG);
-          lfoG.connect(g.gain); 
-          lfo.start(t);
-          lfo.stop(t+chordDur);
-          
-          osc.connect(g);
-          g.connect(dest);
-          osc.start(t);
-          osc.stop(t+chordDur);
-       });
+       // FIX: Use Math.floor to ensure integer index for array access
+       const idx = Math.floor(t / chordDur) % progression.length;
+       const chord = progression[idx];
+       
+       if (chord) {
+           chord.forEach(freq => {
+              const osc = ctx.createOscillator();
+              osc.type = 'triangle';
+              osc.frequency.value = freq;
+              const g = ctx.createGain();
+              g.gain.setValueAtTime(0, t);
+              g.gain.linearRampToValueAtTime(0.04, t + 0.1);
+              g.gain.setValueAtTime(0.04, t + chordDur - 0.5);
+              g.gain.linearRampToValueAtTime(0, t + chordDur);
+              
+              // Tremolo
+              const lfo = ctx.createOscillator();
+              lfo.frequency.value = randomRange(3, 6);
+              const lfoG = ctx.createGain();
+              lfoG.gain.value = 0.01;
+              lfo.connect(lfoG);
+              lfoG.connect(g.gain); 
+              lfo.start(t);
+              lfo.stop(t+chordDur);
+              
+              osc.connect(g);
+              g.connect(dest);
+              osc.start(t);
+              osc.stop(t+chordDur);
+           });
+       }
     }
     
     // Simple Hip Hop Beat
