@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Smartphone } from 'lucide-react';
+import { Mic, Sparkles, Loader2, PlayCircle, ArrowLeft, Heart, Smartphone, Play, Square, Volume2 } from 'lucide-react';
 import VoiceControls from './components/VoiceControls';
 import TextInput from './components/TextInput';
 import AudioList from './components/AudioList';
@@ -25,6 +25,11 @@ const AppContent: React.FC = () => {
   const [processing, setProcessing] = useState<ProcessingState>({
     isEnhancing: false, isGeneratingAudio: false, error: null,
   });
+  
+  // Preview State
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const previewSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -55,7 +60,74 @@ const AppContent: React.FC = () => {
     return audioContextRef.current;
   };
 
+  const stopPreview = () => {
+    if (previewSourceRef.current) {
+      try {
+        previewSourceRef.current.stop();
+      } catch (e) {
+        // Ignore if already stopped
+      }
+      previewSourceRef.current = null;
+    }
+    setIsPlayingPreview(false);
+  };
+
+  const handlePreviewNarration = async () => {
+    // If currently playing preview, stop it
+    if (isPlayingPreview) {
+      stopPreview();
+      return;
+    }
+
+    if (!text.trim()) return;
+
+    const ctx = initAudioContext();
+    
+    if (!process.env.API_KEY) {
+        alert("ERRO: Chave API não encontrada.");
+        return;
+    }
+
+    setIsPlayingPreview(true);
+
+    try {
+      // 1. Create Snippet (Max 150 chars)
+      let previewText = text.length > 150 ? text.slice(0, 150) + "..." : text;
+
+      // 2. Refine snippet if tone is selected (to hear the style)
+      if (selectedTone !== ToneType.Neutral) {
+         // Quick refinement for preview
+         previewText = await refineText(previewText, selectedTone, false);
+      }
+
+      // 3. Generate Audio
+      const base64Data = await generateSpeech(previewText, selectedVoice);
+      const buffer = await decodeAudioData(base64Data, ctx);
+
+      // 4. Play directly
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      
+      source.onended = () => {
+        setIsPlayingPreview(false);
+        previewSourceRef.current = null;
+      };
+
+      source.start(0);
+      previewSourceRef.current = source;
+
+    } catch (err: any) {
+      console.error("Preview Error:", err);
+      alert("Erro no preview: " + (err.message || "Tente novamente"));
+      setIsPlayingPreview(false);
+    }
+  };
+
   const handleGenerateNarration = async () => {
+    // Stop any running preview
+    stopPreview();
+
     const ctx = initAudioContext();
     
     if (!process.env.API_KEY) {
@@ -138,9 +210,32 @@ const AppContent: React.FC = () => {
                     <div className="lg:col-span-7 space-y-6">
                         <VoiceControls selectedVoice={selectedVoice} onVoiceChange={setSelectedVoice} selectedTone={selectedTone} onToneChange={setSelectedTone} useMusic={useMusic} onMusicChange={setUseMusic} />
                         <div className="min-h-[200px]"><TextInput value={text} onChange={setText} disabled={processing.isGeneratingAudio} /></div>
-                        <button onClick={handleGenerateNarration} disabled={processing.isGeneratingAudio || !text.trim()} className="w-full py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex justify-center items-center gap-2">
-                            {processing.isEnhancing ? "Refinando..." : processing.isGeneratingAudio ? "Gerando..." : <><Sparkles size={18}/> Gerar Fala</>}
-                        </button>
+                        
+                        {/* Action Buttons */}
+                        <div className="flex gap-4">
+                            <button 
+                              onClick={handlePreviewNarration} 
+                              disabled={processing.isGeneratingAudio || !text.trim()} 
+                              className={`flex-1 py-4 rounded-xl font-bold flex justify-center items-center gap-2 border transition-all ${
+                                isPlayingPreview 
+                                  ? 'bg-red-500/20 border-red-500 text-red-200 hover:bg-red-500/30' 
+                                  : 'bg-slate-800 border-slate-700 text-indigo-300 hover:bg-slate-700 hover:border-indigo-500/50'
+                              }`}
+                            >
+                                {isPlayingPreview 
+                                  ? <><Square size={18} fill="currentColor" /> Parar Preview</> 
+                                  : <><Play size={18} /> Ouvir Trecho</>
+                                }
+                            </button>
+
+                            <button 
+                              onClick={handleGenerateNarration} 
+                              disabled={processing.isGeneratingAudio || !text.trim() || isPlayingPreview} 
+                              className="flex-[2] py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex justify-center items-center gap-2 shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {processing.isEnhancing ? "Refinando..." : processing.isGeneratingAudio ? "Gerando..." : <><Sparkles size={18}/> Gerar Fala Completa</>}
+                            </button>
+                        </div>
                     </div>
                     <div className="lg:col-span-5">
                         <div className="bg-slate-900/50 rounded-2xl p-4 border border-slate-800 h-[500px] overflow-y-auto">
@@ -155,6 +250,11 @@ const AppContent: React.FC = () => {
          {mode === AppMode.SFX && <SFXStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
          {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} />}
       </main>
+      
+      <footer className="p-6 text-center text-slate-500 text-xs border-t border-slate-900/50 bg-[#0f172a] mt-auto">
+         <p>Desenvolvido com ❤️ por <span className="text-indigo-400 font-bold">Daniel de Oliveira</span></p>
+         <p className="opacity-50 mt-1">Powered by Google Gemini 2.5 & Web Audio API</p>
+      </footer>
     </div>
   );
 };
