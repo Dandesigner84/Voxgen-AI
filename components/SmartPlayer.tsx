@@ -110,6 +110,10 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       if (narrationSourceNodeRef.current) {
           try { narrationSourceNodeRef.current.stop(); } catch(e) {}
       }
+      // Cleanup Youtube Player
+      if (playerRef.current && typeof playerRef.current.destroy === 'function') {
+          try { playerRef.current.destroy(); } catch(e) {}
+      }
     };
   }, []);
 
