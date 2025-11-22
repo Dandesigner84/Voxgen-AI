@@ -23,7 +23,9 @@ export enum AppMode {
   Music = 'Music',
   Avatar = 'Avatar',
   SFX = 'SFX',
-  SmartPlayer = 'SmartPlayer'
+  SmartPlayer = 'SmartPlayer',
+  Manga = 'Manga',
+  Admin = 'Admin'
 }
 
 export interface AudioItem {
@@ -45,6 +47,7 @@ export interface MusicItem {
   createdAt: Date;
   duration: number;
   isRemix?: boolean; // New flag for remixed tracks
+  engine?: 'web-audio' | 'musicgen';
 }
 
 export interface SFXItem {
@@ -66,4 +69,42 @@ export interface ProcessingState {
   isEnhancing: boolean;
   isGeneratingAudio: boolean;
   error: string | null;
+}
+
+// --- Manga / Gibi Types ---
+
+export type ComicStyle = 'Manga' | 'American Comic' | 'Pixar 3D' | 'Anime' | 'Sketch';
+
+export interface ComicPage {
+  id: string;
+  imageUrl: string; // Base64
+  text: string;
+  audioData?: AudioBuffer; // Optional Narration
+  panelNumber: number;
+}
+
+export interface ComicProject {
+  id: string;
+  title: string;
+  style: ComicStyle;
+  pages: ComicPage[];
+  characterImage?: string; // Base64 reference
+}
+
+// --- Monetization Types ---
+
+export type UserPlan = 'free' | 'premium';
+
+export interface UserStatus {
+  plan: UserPlan;
+  expiryDate: number | null; // Timestamp
+  narrationsToday: number;
+}
+
+export interface PremiumCode {
+  code: string;
+  days: number;
+  isRedeemed: boolean;
+  createdAt: number;
+  redeemedAt?: number;
 }

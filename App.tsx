@@ -9,11 +9,14 @@ import MusicStudio from './components/MusicStudio';
 import AvatarStudio from './components/AvatarStudio';
 import SFXStudio from './components/SFXStudio';
 import SmartPlayer from './components/SmartPlayer';
+import MangaStudio from './components/MangaStudio';
+import AdminPanel from './components/AdminPanel';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AudioItem, ProcessingState, ToneType, VoiceName, AppMode } from './types';
 import { DEFAULT_TEXT } from './constants';
 import { refineText, generateSpeech } from './services/geminiService';
 import { decodeAudioData, addBackgroundMusic } from './utils/audioUtils';
+import { canGenerateNarration, incrementUsage } from './services/monetizationService';
 
 const AppContent: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.Home);
@@ -91,8 +94,13 @@ const AppContent: React.FC = () => {
     setIsPlayingPreview(true);
 
     try {
-      // 1. Create Snippet (Max 150 chars)
-      let previewText = text.length > 150 ? text.slice(0, 150) + "..." : text;
+      // 1. Create Snippet (Max 150 chars, smart truncate at word boundary)
+      let previewText = text;
+      if (text.length > 150) {
+        const truncated = text.slice(0, 150);
+        const lastSpace = truncated.lastIndexOf(' ');
+        previewText = (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated) + "...";
+      }
 
       // 2. Refine snippet if tone is selected (to hear the style)
       if (selectedTone !== ToneType.Neutral) {
@@ -127,6 +135,13 @@ const AppContent: React.FC = () => {
   const handleGenerateNarration = async () => {
     // Stop any running preview
     stopPreview();
+
+    // CHECK FREEMIUM LIMITS
+    const limitCheck = canGenerateNarration();
+    if (!limitCheck.allowed) {
+      alert(limitCheck.message);
+      return;
+    }
 
     const ctx = initAudioContext();
     
@@ -170,6 +185,9 @@ const AppContent: React.FC = () => {
           duration: finalBuffer.duration
         };
         setHistory(prev => [newItem, ...prev]);
+        
+        // Register Usage
+        incrementUsage();
       }
     } catch (err: any) {
       console.error(err);
@@ -177,12 +195,10 @@ const AppContent: React.FC = () => {
       setProcessing(prev => ({ ...prev, error: msg }));
       alert("FALHA NA GERAÇÃO: " + msg);
     } finally {
-      // NÃO limpe o erro aqui, senão o usuário não vê
       setProcessing(prev => ({ ...prev, isEnhancing: false, isGeneratingAudio: false }));
     }
   };
 
-  // Render helpers omitted for brevity, structure remains same as original
   return (
     <div className="min-h-screen flex flex-col bg-[#0f172a] text-slate-200 font-sans">
       {/* Header */}
@@ -199,6 +215,7 @@ const AppContent: React.FC = () => {
       
       <main className="flex-grow py-8">
          {mode === AppMode.Home && <Home onSelectMode={setMode} />}
+         {mode === AppMode.Admin && <AdminPanel />}
          {mode === AppMode.Narration && (
             <div className="max-w-6xl mx-auto px-4">
                 {processing.error && (
@@ -247,6 +264,7 @@ const AppContent: React.FC = () => {
          )}
          {mode === AppMode.Music && <MusicStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
          {mode === AppMode.Avatar && <AvatarStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
+         {mode === AppMode.Manga && <MangaStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
          {mode === AppMode.SFX && <SFXStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
          {mode === AppMode.SmartPlayer && <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} />}
       </main>

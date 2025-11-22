@@ -99,6 +99,74 @@ export const generateSpeech = async (text: string, voice: VoiceName): Promise<st
   }
 };
 
+export const generateImage = async (prompt: string, style: string, referenceImageBase64?: string): Promise<string> => {
+  const ai = getClient();
+  
+  // Construct a rich prompt for the image model focusing on Comic/Manga creation rules
+  let fullPrompt = `
+    Role: Professional Comic/Manga Artist.
+    Task: Create a high-quality illustration in ${style} style based on the user's description.
+    
+    STRICT INSTRUCTIONS FOR PROMPT PARSING:
+    1. Content inside [...] brackets denotes CHARACTER ACTION, POSE, or EMOTION (e.g., [running fast], [looking scared]).
+    2. Content inside <...> brackets denotes CINEMATOGRAPHY, CAMERA ANGLE, or LIGHTING (e.g., <wide shot>, <dramatic lighting>, <low angle>).
+    3. The rest of the text is the scene narrative and context.
+    
+    User Scene Description: "${prompt}"
+    
+    Output Requirement: A single, high-resolution panel that perfectly integrates the action [...], the camera angle <...>, and the narrative context.
+  `;
+
+  if (referenceImageBase64) {
+    fullPrompt += `
+    CRITICAL REFERENCE INSTRUCTION:
+    - Use the attached image as the ABSOLUTE SOURCE OF TRUTH for the main character's design.
+    - Maintain the character's facial features, hair style, and clothing exactly as shown in the reference image.
+    - Only adapt the pose and expression as requested in the prompt.
+    `;
+  }
+
+  try {
+    const contentsPayload: any = {
+      parts: [{ text: fullPrompt }]
+    };
+
+    // If we have a reference image, we attach it (Multimodal input)
+    if (referenceImageBase64) {
+       // Clean base64 header if present
+       const cleanBase64 = referenceImageBase64.split(',')[1] || referenceImageBase64;
+       contentsPayload.parts.push({
+         inlineData: {
+           mimeType: "image/jpeg",
+           data: cleanBase64
+         }
+       });
+    }
+
+    // Use gemini-2.5-flash-image for image generation (Nano Banana)
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image', 
+      contents: contentsPayload,
+      config: {
+        // aspect ratio can be tweaked if needed
+      }
+    });
+
+    // Iterate parts to find the image
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData && part.inlineData.data) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+
+    throw new Error("Nenhuma imagem foi gerada pela IA.");
+
+  } catch (e: any) {
+    console.error("Image Gen Error:", e);
+    throw new Error("Falha ao gerar imagem: " + (e.message || "Erro desconhecido"));
+  }
+};
+
 // --- Music Generation Services ---
 
 export const generateSongMetadata = async (description: string, userLyrics?: string): Promise<any> => {

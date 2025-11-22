@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Radio, Upload, Play, Pause, SkipForward, Mic2, Clock, Youtube, Trash2, Link, AlertCircle, Loader2 } from 'lucide-react';
+import { Radio, Upload, Play, Pause, SkipForward, Mic2, Clock, Youtube, Trash2, Link, Lock } from 'lucide-react';
 import { AudioItem } from '../types';
+import { isSmartPlayerUnlocked } from '../services/monetizationService';
 
 interface SmartPlayerProps {
   audioContext: AudioContext | null;
@@ -50,6 +51,8 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const timerIntervalRef = useRef<number | null>(null);
   const narrationSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const fadeIntervalRef = useRef<number | null>(null);
+
+  const isPremium = isSmartPlayerUnlocked();
 
   // --- INITIALIZATION ---
   useEffect(() => {
@@ -120,14 +123,13 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
         pauseTrack();
         stopScheduler();
     }
-  }, [isPlaying, currentTrackIndex, playlist]); // Re-run when track or play state changes
+  }, [isPlaying, currentTrackIndex, playlist]); 
 
   const playTrack = (track: Track) => {
       // Stop the other player
       if (track.type === 'file') {
           ytPlayerRef.current?.pauseVideo();
           if (audioElRef.current) {
-              // Only reload src if it changed
               const currentSrc = audioElRef.current.src;
               if (currentSrc !== track.src) {
                   audioElRef.current.src = track.src;
@@ -138,9 +140,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       } else {
           audioElRef.current?.pause();
           if (ytPlayerRef.current && ytPlayerRef.current.loadVideoById) {
-               // Check if already playing this video to avoid reload
                const playerState = ytPlayerRef.current.getPlayerState();
-               // If stopped or different video, load. If paused, play.
                ytPlayerRef.current.loadVideoById(track.src);
                ytPlayerRef.current.playVideo();
           }
@@ -151,7 +151,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       audioElRef.current?.pause();
       ytPlayerRef.current?.pauseVideo();
       
-      // Also stop narration if playing
       if (isNarratingRef.current && narrationSourceNodeRef.current) {
           narrationSourceNodeRef.current.stop();
           isNarratingRef.current = false;
@@ -163,16 +162,13 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       if (playlist.length === 0) return;
       const nextIndex = (currentTrackIndex + 1) % playlist.length;
       setCurrentTrackIndex(nextIndex);
-      // Effect will trigger playback
   };
 
   // --- NARRATION LOGIC ---
 
   const startScheduler = () => {
-      // Reset timer only if not already running correctly
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       
-      // Set initial next time if reset
       if (nextNarrationTimeRef.current < Date.now()) {
            nextNarrationTimeRef.current = Date.now() + (intervalSeconds * 1000);
       }
@@ -181,7 +177,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
           const now = Date.now();
           const remaining = Math.max(0, Math.ceil((nextNarrationTimeRef.current - now) / 1000));
           
-          // Format display
           if (remaining > 60) {
               const m = Math.floor(remaining / 60);
               const s = remaining % 60;
@@ -201,10 +196,9 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   };
 
   const playNarration = () => {
-      const ctx = initAudioContext(); // Ensure context is active
+      const ctx = initAudioContext(); 
       if (ctx.state === 'suspended') ctx.resume();
 
-      // Identify Buffer
       let buffer: AudioBuffer | null = null;
       if (narrationSource === 'upload') {
           buffer = uploadedNarration;
@@ -214,17 +208,13 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       }
 
       if (!buffer) {
-          // No narration available, skip turn
           nextNarrationTimeRef.current = Date.now() + (intervalSeconds * 1000);
           return;
       }
 
       isNarratingRef.current = true;
-      
-      // DUCKING START
       lowerVolume();
 
-      // Play Narration
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(ctx.destination);
@@ -232,8 +222,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
       source.onended = () => {
           isNarratingRef.current = false;
-          restoreVolume(); // DUCKING END
-          // Schedule next
+          restoreVolume(); 
           nextNarrationTimeRef.current = Date.now() + (intervalSeconds * 1000);
       };
 
@@ -243,26 +232,20 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   // --- VOLUME CONTROL (DUCKING) ---
 
   const lowerVolume = () => {
-      // 1. Local Audio
       const ctx = initAudioContext();
       if (gainNodeRef.current) {
           gainNodeRef.current.gain.setTargetAtTime(0.05, ctx.currentTime, 0.5);
       }
-      // 2. YouTube
       if (ytPlayerRef.current && ytPlayerRef.current.setVolume) {
-          ytPlayerRef.current.setVolume(5); // 0-100
+          ytPlayerRef.current.setVolume(5); 
       }
   };
 
   const restoreVolume = () => {
-      // 1. Local Audio
       const ctx = initAudioContext();
       if (gainNodeRef.current) {
-           // Smooth ramp back up
-           // Since setTargetAtTime is exponential and never truly reaches target, we use a simpler approach for restore or use linear ramp
            gainNodeRef.current.gain.linearRampToValueAtTime(1.0, ctx.currentTime + 3.0);
       }
-      // 2. YouTube (Manual Fade)
       if (ytPlayerRef.current && ytPlayerRef.current.setVolume) {
           let vol = 5;
           if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
@@ -273,14 +256,13 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                   if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
               }
               ytPlayerRef.current.setVolume(vol);
-          }, 150); // Fade over ~3 seconds
+          }, 150); 
       }
   };
 
   // --- UI HANDLERS ---
 
   const addYoutubeLink = () => {
-      // Extract ID
       const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
       const match = youtubeInput.match(regExp);
       
@@ -313,7 +295,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
               }));
               setPlaylist(prev => [...prev, ...newTracks]);
           } else {
-              // Upload Narration
               const f = files[0];
               const reader = new FileReader();
               reader.onload = async (ev) => {
@@ -338,7 +319,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
   return (
     <div className="max-w-6xl mx-auto w-full px-4 animate-fade-in pb-20">
-        {/* Hidden YT Player Div */}
         <div id="youtube-player-hidden" className="hidden"></div>
 
         <div className="text-center mb-8">
@@ -350,11 +330,9 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
         {/* Main Player Display */}
         <div className="bg-slate-800/50 border border-slate-700 rounded-3xl p-8 mb-8 relative overflow-hidden">
-             {/* Background Blur Art */}
              <div className="absolute inset-0 opacity-20 blur-3xl bg-gradient-to-br from-cyan-500 to-blue-600 pointer-events-none" />
              
              <div className="relative z-10 flex flex-col items-center">
-                 {/* Album Art / YT Thumbnail */}
                  <div className="w-64 h-64 rounded-full border-4 border-slate-700/50 shadow-2xl mb-6 overflow-hidden bg-black flex items-center justify-center relative">
                      {playlist[currentTrackIndex] ? (
                          playlist[currentTrackIndex].type === 'youtube' ? (
@@ -368,7 +346,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                          <div className="text-slate-600">Sem Faixa</div>
                      )}
                      
-                     {/* Spinner if Waiting for Narration */}
                      {isNarratingRef.current && (
                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm">
                              <Mic2 size={48} className="text-cyan-400 animate-pulse" />
@@ -377,7 +354,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                      )}
                  </div>
 
-                 {/* Controls */}
                  <h3 className="text-xl font-bold text-white mb-1 text-center line-clamp-1 max-w-md">
                      {playlist[currentTrackIndex]?.name || "Nenhuma faixa selecionada"}
                  </h3>
@@ -406,7 +382,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                      </button>
                  </div>
 
-                 {/* Next Narration Timer */}
                  <div className="mt-8 bg-black/30 px-6 py-2 rounded-full border border-white/5 flex items-center gap-3">
                      <Clock size={14} className="text-cyan-400" />
                      <span className="text-xs text-slate-400">Próxima Narração em:</span>
@@ -417,7 +392,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
              </div>
         </div>
 
-        {/* Manager Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             
             {/* Playlist Manager */}
@@ -426,9 +400,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                     <Upload size={18} className="text-purple-400" /> Gerenciar Playlist
                 </h4>
                 
-                {/* Add Methods */}
                 <div className="space-y-4 mb-6">
-                    {/* YouTube Input */}
                     <div className="flex gap-2">
                         <div className="relative flex-grow">
                             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
@@ -450,7 +422,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                         </button>
                     </div>
 
-                    {/* File Input */}
                     <label className="flex items-center justify-center gap-2 w-full py-2 border border-dashed border-slate-600 rounded-lg hover:bg-slate-800 cursor-pointer transition-colors">
                         <Upload size={16} className="text-slate-400" />
                         <span className="text-sm text-slate-300">Adicionar MP3/WAV Locais</span>
@@ -464,7 +435,6 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                     </label>
                 </div>
 
-                {/* List */}
                 <div className="h-64 overflow-y-auto custom-scrollbar space-y-2 pr-2">
                     {playlist.length === 0 && (
                         <div className="text-center py-8 text-slate-600 text-sm">Playlist vazia</div>
@@ -540,22 +510,36 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
                  {/* Interval Slider */}
                  <div>
                      <div className="flex justify-between mb-2">
-                         <label className="text-xs text-slate-400">Intervalo entre locuções</label>
-                         <span className="text-xs font-bold text-cyan-400">{intervalSeconds} segundos</span>
+                         <div className="flex items-center gap-2">
+                            <label className="text-xs text-slate-400">Intervalo entre locuções</label>
+                            {!isPremium && <Lock size={10} className="text-yellow-500" />}
+                         </div>
+                         <span className={`text-xs font-bold ${isPremium ? 'text-cyan-400' : 'text-slate-500'}`}>{intervalSeconds} segundos</span>
                      </div>
                      <input 
                         type="range" 
                         min="5" 
-                        max="180" 
+                        max={isPremium ? "180" : "60"} 
                         step="5"
                         value={intervalSeconds} 
-                        onChange={(e) => setIntervalSeconds(parseInt(e.target.value))}
-                        className="w-full accent-cyan-500 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                        onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!isPremium && val > 60) return; // Prevent change
+                            setIntervalSeconds(val);
+                        }}
+                        disabled={!isPremium}
+                        className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${isPremium ? 'bg-slate-700 accent-cyan-500' : 'bg-slate-800 accent-slate-600'}`}
                      />
                      <div className="flex justify-between mt-1 text-[10px] text-slate-600">
-                         <span>5s (Teste)</span>
-                         <span>3min (Rádio)</span>
+                         <span>5s</span>
+                         <span>{isPremium ? '3min' : '60s (Free Max)'}</span>
                      </div>
+                     {!isPremium && (
+                         <p className="text-[10px] text-yellow-500/80 mt-2 bg-yellow-900/10 p-2 rounded border border-yellow-900/20">
+                             <Lock size={8} className="inline mr-1"/>
+                             Usuários Free limitados a 60s. Insira um código para liberar até 3min.
+                         </p>
+                     )}
                  </div>
             </div>
 
