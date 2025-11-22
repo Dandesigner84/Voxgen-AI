@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Mic, Music, UserSquare2, Volume2, Radio, Crown, Check, BookOpen } from 'lucide-react';
+import { Mic, Music, UserSquare2, Volume2, Radio, Crown, Check, BookOpen, ShieldCheck, KeyRound } from 'lucide-react';
 import { AppMode } from '../types';
 import { getUserStatus, redeemCode, getFormatExpiryDate } from '../services/monetizationService';
 
@@ -12,6 +12,7 @@ const Home: React.FC<HomeProps> = ({ onSelectMode }) => {
   const [code, setCode] = useState('');
   const [status, setStatus] = useState(getUserStatus());
   const [redeemMsg, setRedeemMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
+  const [showRedeemInput, setShowRedeemInput] = useState(false);
 
   useEffect(() => {
     // Refresh status on mount
@@ -26,20 +27,12 @@ const Home: React.FC<HomeProps> = ({ onSelectMode }) => {
       setRedeemMsg({ type: 'success', text: result.message });
       setStatus(getUserStatus());
       setCode('');
+      setTimeout(() => setShowRedeemInput(false), 2000);
     } else {
       setRedeemMsg({ type: 'error', text: result.message });
     }
     
     setTimeout(() => setRedeemMsg(null), 5000);
-  };
-
-  // Secret Admin Shortcut: Alt + Click on Logo handled in App.tsx usually, 
-  // but let's add a subtle button here or handle keypress.
-  // For simplicity, let's add a hidden trigger on the "VoxGen AI" title
-  const handleTitleClick = (e: React.MouseEvent) => {
-    if (e.altKey) {
-        onSelectMode(AppMode.Admin);
-    }
   };
 
   return (
@@ -49,9 +42,7 @@ const Home: React.FC<HomeProps> = ({ onSelectMode }) => {
       <div className="w-full max-w-4xl flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
         <div className="text-center md:text-left">
             <h1 
-                onClick={handleTitleClick}
-                className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 tracking-tight cursor-default select-none hover:opacity-90 transition-opacity"
-                title="Segure Alt + Clique para Admin"
+                className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 tracking-tight select-none"
             >
             VoxGen AI
             </h1>
@@ -60,52 +51,72 @@ const Home: React.FC<HomeProps> = ({ onSelectMode }) => {
             </p>
         </div>
 
-        {/* Premium Status Box */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-4 min-w-[300px] backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                    {status.plan === 'premium' ? (
-                        <Crown size={20} className="text-yellow-400 fill-yellow-400 animate-pulse" />
-                    ) : (
-                        <div className="w-5 h-5 rounded-full border-2 border-slate-500" />
-                    )}
-                    <span className={`font-bold ${status.plan === 'premium' ? 'text-yellow-400' : 'text-slate-300'}`}>
+        {/* Action Buttons / Status Box */}
+        <div className="flex flex-col gap-3 items-end">
+            {/* Status Badge */}
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-2 backdrop-blur-sm flex items-center gap-3">
+                {status.plan === 'premium' ? (
+                    <Crown size={20} className="text-yellow-400 fill-yellow-400 animate-pulse" />
+                ) : (
+                    <div className="w-3 h-3 rounded-full bg-slate-500" />
+                )}
+                <div className="flex flex-col items-start">
+                    <span className={`text-sm font-bold ${status.plan === 'premium' ? 'text-yellow-400' : 'text-slate-300'}`}>
                         {status.plan === 'premium' ? 'MEMBRO PREMIUM' : 'Plano Gratuito'}
                     </span>
+                    {status.plan === 'premium' ? (
+                        <span className="text-[10px] text-slate-500">Válido até {getFormatExpiryDate()}</span>
+                    ) : (
+                        <span className="text-[10px] text-slate-500">{status.narrationsToday}/3 narrações hoje</span>
+                    )}
                 </div>
-                <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">{status.plan === 'premium' ? 'PRO' : 'FREE'}</span>
             </div>
-            
-            {status.plan === 'premium' ? (
-                <div className="text-xs text-slate-400">
-                    Acesso ilimitado liberado até <span className="text-white font-bold">{getFormatExpiryDate()}</span>
-                </div>
-            ) : (
-                <div className="text-xs text-slate-400 mb-2">
-                    Uso hoje: <span className="text-white font-bold">{status.narrationsToday}/3</span> narrações
-                </div>
-            )}
 
-            {/* Redeem Input */}
-            <div className="mt-3 flex gap-2">
-                <input 
-                    type="text" 
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="Código Premiado"
-                    className="bg-slate-900 border border-slate-600 rounded px-3 py-1 text-xs text-white outline-none focus:border-indigo-500 flex-grow uppercase"
-                />
+            {/* Button Group */}
+            <div className="flex gap-2 w-full justify-end">
                 <button 
-                    onClick={handleRedeem}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors"
+                    onClick={() => setShowRedeemInput(!showRedeemInput)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border transition-colors ${showRedeemInput ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-indigo-300 hover:bg-slate-700'}`}
                 >
-                    <Check size={14} />
+                    <KeyRound size={14} />
+                    {showRedeemInput ? 'Fechar' : 'Resgatar Código'}
+                </button>
+                
+                <button 
+                    onClick={() => onSelectMode(AppMode.Admin)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                    title="Acesso Administrativo"
+                >
+                    <ShieldCheck size={14} />
+                    Admin
                 </button>
             </div>
-            {redeemMsg && (
-                <p className={`text-[10px] mt-2 ${redeemMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
-                    {redeemMsg.text}
-                </p>
+
+            {/* Redeem Input Area (Conditional) */}
+            {showRedeemInput && (
+                <div className="bg-slate-800 border border-slate-600 p-3 rounded-xl w-full max-w-[300px] animate-fade-in shadow-xl">
+                    <label className="text-[10px] text-slate-400 uppercase font-bold mb-1 block">Inserir Código Premiado</label>
+                    <div className="flex gap-2">
+                        <input 
+                            type="text" 
+                            value={code}
+                            onChange={(e) => setCode(e.target.value)}
+                            placeholder="VOX-XXXXXX"
+                            className="bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-sm text-white outline-none focus:border-indigo-500 flex-grow uppercase font-mono"
+                        />
+                        <button 
+                            onClick={handleRedeem}
+                            className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded text-xs font-bold transition-colors"
+                        >
+                            <Check size={16} />
+                        </button>
+                    </div>
+                    {redeemMsg && (
+                        <p className={`text-[10px] mt-2 font-medium ${redeemMsg.type === 'success' ? 'text-green-400' : 'text-red-400'}`}>
+                            {redeemMsg.text}
+                        </p>
+                    )}
+                </div>
             )}
         </div>
       </div>
