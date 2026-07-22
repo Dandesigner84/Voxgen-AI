@@ -1,0 +1,8 @@
+{
+  "name": "VoxGen AI Studio 2",
+  "description": "Plataforma completa de criação com IA: Narração, Música, Manga Studio e Rádio Inteligente.",
+  "requestFramePermissions": [
+    "microphone",
+    "identity-credentials-get"   
+  ]
+}
