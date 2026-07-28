@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Radio, Upload, Play, Pause, SkipForward, Mic2, Clock, Youtube, Trash2, Link, Smartphone, Music, CheckSquare, Square, Lock, Sliders, Volume2, CloudUpload, Repeat, Repeat1, Shuffle, FileAudio, Check, AlertCircle, Loader2, XCircle, Shield } from 'lucide-react';
+import { Radio, Upload, Play, Pause, SkipForward, Mic2, Clock, Youtube, Trash2, Link, Smartphone, Music, CheckSquare, Square, Lock, Sliders, Volume2, CloudUpload, Repeat, Repeat1, Shuffle, FileAudio, Check, AlertCircle, Loader2, XCircle, Shield, Newspaper, Send } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AudioItem, UserRole } from '../types';
 import { isSmartPlayerUnlocked } from '../services/monetizationService';
@@ -8,6 +8,7 @@ import { getCorporatePlaylist, saveCorporatePlaylist } from '../services/corpora
 import { generateSpeech } from '../services/geminiService';
 import { decodeAudioData, audioBufferToWav } from '../utils/audioUtils';
 import { VIGNETTE_TEXT } from '../constants';
+import { BoletimHistoryItem, getBoletimHistory } from '../services/boletimService';
 import { 
   startKeepAlive, 
   stopKeepAlive, 
@@ -62,7 +63,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const [loopMode, setLoopMode] = useState<'off' | 'all' | 'one'>('all');
   const [isShuffle, setIsShuffle] = useState(false);
   const [webInput, setWebInput] = useState('');
-  const [intervalSeconds, setIntervalSeconds] = useState(60); 
+  const [intervalSeconds, setIntervalSeconds] = useState(1800); // Padrão: 30 minutos (1800s)
   const [isSmartEqEnabled, setIsSmartEqEnabled] = useState(true);
   const [narrationSource, setNarrationSource] = useState<'history' | 'upload'>('history');
   const [uploadedNarrations, setUploadedNarrations] = useState<UploadedNarrationFile[]>([]);
@@ -72,6 +73,29 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const [nextNarrationTimeDisplay, setNextNarrationTimeDisplay] = useState<string>('--:--');
   const [isNarratingUI, setIsNarratingUI] = useState(false);
   const [showRemoteModal, setShowRemoteModal] = useState(false);
+
+  // Fila de Boletins IA
+  const [boletinsQueue, setBoletinsQueue] = useState<BoletimHistoryItem[]>(() => {
+    return getBoletimHistory().filter(item => item.generationStatus === 'success');
+  });
+
+  useEffect(() => {
+    const handleBoletimCreated = (e: Event) => {
+      const customEvent = e as CustomEvent<BoletimHistoryItem>;
+      if (customEvent.detail && customEvent.detail.generationStatus === 'success') {
+        console.log("[SmartPlay] Novo boletim IA recebido na fila:", customEvent.detail.niche);
+        const newBoletim = customEvent.detail;
+        setBoletinsQueue(prev => [newBoletim, ...prev.filter(b => b.id !== newBoletim.id)]);
+        setSelectedNarrationIds(prev => Array.from(new Set([newBoletim.id, ...prev])));
+        setIntervalSeconds(1800); // Define intervalo automático para 30 minutos
+      }
+    };
+
+    window.addEventListener('voxgen-boletim-created', handleBoletimCreated);
+    return () => {
+      window.removeEventListener('voxgen-boletim-created', handleBoletimCreated);
+    };
+  }, []);
   
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -131,30 +155,69 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
       if (ytPlayerRef.current?.setVolume) fadeYouTubeVolume(15, 100, duration * 1000);
   }, [isSmartEqEnabled, initAudioContext, fadeYouTubeVolume]);
 
+  const playBoletimNow = useCallback((boletim: BoletimHistoryItem) => {
+    if (!boletim.audioData) return;
+    const ctx = initAudioContext(); 
+    if (ctx.state === 'suspended') ctx.resume();
+
+    isNarratingRef.current = true;
+    setIsNarratingUI(true); 
+    lowerVolume(1.0);
+
+    const source = ctx.createBufferSource();
+    source.buffer = boletim.audioData;
+    const voiceGain = ctx.createGain();
+    voiceGain.gain.value = isSmartEqEnabled ? 1.2 : 1.0; 
+    source.connect(voiceGain);
+    voiceGain.connect(ctx.destination);
+    narrationSourceNodeRef.current = source;
+
+    source.onended = () => {
+        isNarratingRef.current = false;
+        setIsNarratingUI(false); 
+        restoreVolume(2.0);
+    };
+    source.start(0);
+
+    // Marca como reproduzido na fila
+    setBoletinsQueue(prev => prev.map(b => b.id === boletim.id ? { ...b, playbackStatus: 'played' } : b));
+  }, [initAudioContext, isSmartEqEnabled, lowerVolume, restoreVolume]);
+
   const playNarration = useCallback(() => {
       const ctx = initAudioContext(); 
       let buffer: AudioBuffer | null = null;
-      if (!isPremium && narrationsSinceVignetteRef.current >= 4 && vignetteBufferRef.current) {
-          buffer = vignetteBufferRef.current;
-          narrationsSinceVignetteRef.current = 0;
-      } else {
-          const availableIds = selectedNarrationIds.filter(id => 
-            narrationHistory.some(n => n.id === id) || 
-            uploadedNarrations.some(u => u.id === id)
-          );
-          
-          if (availableIds.length > 0) {
-              const randomId = availableIds[Math.floor(Math.random() * availableIds.length)];
-              const historyItem = narrationHistory.find(n => n.id === randomId);
-              if (historyItem) {
-                  buffer = historyItem.audioData;
-              } else {
-                  const uploadItem = uploadedNarrations.find(u => u.id === randomId);
-                  if (uploadItem) buffer = uploadItem.buffer;
-              }
-              if (buffer && !isPremium) narrationsSinceVignetteRef.current += 1;
-          }
+
+      // PRIORIDADE: Se houver boletim IA na fila pendente de reprodução
+      const pendingBoletim = boletinsQueue.find(b => b.playbackStatus === 'queued' && b.audioData);
+      if (pendingBoletim) {
+        buffer = pendingBoletim.audioData || null;
+        pendingBoletim.playbackStatus = 'played';
       }
+
+      if (!buffer) {
+        if (!isPremium && narrationsSinceVignetteRef.current >= 4 && vignetteBufferRef.current) {
+            buffer = vignetteBufferRef.current;
+            narrationsSinceVignetteRef.current = 0;
+        } else {
+            const availableIds = selectedNarrationIds.filter(id => 
+              narrationHistory.some(n => n.id === id) || 
+              uploadedNarrations.some(u => u.id === id)
+            );
+            
+            if (availableIds.length > 0) {
+                const randomId = availableIds[Math.floor(Math.random() * availableIds.length)];
+                const historyItem = narrationHistory.find(n => n.id === randomId);
+                if (historyItem) {
+                    buffer = historyItem.audioData;
+                } else {
+                    const uploadItem = uploadedNarrations.find(u => u.id === randomId);
+                    if (uploadItem) buffer = uploadItem.buffer;
+                }
+                if (buffer && !isPremium) narrationsSinceVignetteRef.current += 1;
+            }
+        }
+      }
+
       if (!buffer) {
           nextNarrationTimeRef.current = Date.now() + (intervalSeconds * 1000);
           hasFadedOutRef.current = false;
@@ -179,7 +242,7 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
           hasFadedOutRef.current = false;
       };
       source.start(0);
-  }, [isPremium, selectedNarrationIds, narrationHistory, uploadedNarrations, intervalSeconds, isSmartEqEnabled, initAudioContext, lowerVolume, restoreVolume]);
+  }, [isPremium, boletinsQueue, selectedNarrationIds, narrationHistory, uploadedNarrations, intervalSeconds, isSmartEqEnabled, initAudioContext, lowerVolume, restoreVolume]);
 
   const startScheduler = useCallback(() => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
@@ -928,6 +991,55 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
             {/* Sidebar Section */}
             <div className="lg:col-span-4 space-y-8">
+                {/* Card de Fila de Boletins IA */}
+                <div className="bg-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-2xl border border-indigo-500/30">
+                                <Newspaper size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                    📰 Boletins IA
+                                </h3>
+                                <p className="text-[11px] text-slate-400">Fila do Smart Play</p>
+                            </div>
+                        </div>
+                        <span className="px-2.5 py-1 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full text-xs font-bold">
+                            {boletinsQueue.length} na fila
+                        </span>
+                    </div>
+
+                    <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+                        {boletinsQueue.length === 0 ? (
+                            <p className="text-center py-4 text-slate-500 text-xs italic">
+                                Nenhum boletim na fila. Gere um novo boletim na aba "Boletim Inteligente IA".
+                            </p>
+                        ) : (
+                            boletinsQueue.map(boletim => (
+                                <div key={boletim.id} className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/80 flex items-center justify-between gap-3">
+                                    <div className="min-w-0 flex-grow">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-white truncate">{boletim.niche}</span>
+                                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${boletim.playbackStatus === 'played' ? 'bg-slate-700 text-slate-400' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'}`}>
+                                                {boletim.playbackStatus === 'played' ? 'Tocado' : 'Na Fila'}
+                                            </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">{boletim.location} • {boletim.duration}s</p>
+                                    </div>
+                                    <button
+                                        onClick={() => playBoletimNow(boletim)}
+                                        className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 flex-shrink-0 transition-colors"
+                                        title="Reproduzir este boletim agora no Smart Play"
+                                    >
+                                        <Play size={12} fill="currentColor" /> Tocar
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
                 {/* Background Audio Smartphone Card */}
                 <div className="bg-slate-900 border border-emerald-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                     <div className="flex items-center justify-between mb-3">
@@ -970,15 +1082,16 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
 
                     <div className="space-y-6">
                         <div>
-                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 block">Intervalo de Narração</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {[30, 60, 120].map(sec => (
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 block">Intervalo de Narração (Boletins IA)</label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[60, 300, 900, 1800, 3600].map(sec => (
                                     <button 
                                         key={sec}
                                         onClick={() => setIntervalSeconds(sec)}
-                                        className={`py-2 rounded-xl text-xs font-bold transition-all ${intervalSeconds === sec ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                                        className={`py-2.5 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center ${intervalSeconds === sec ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-400' : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700'}`}
                                     >
-                                        {sec >= 60 ? `${sec/60}m` : `${sec}s`}
+                                        <span>{sec >= 3600 ? `${sec/3600}h` : sec >= 60 ? `${sec/60}m` : `${sec}s`}</span>
+                                        {sec === 1800 && <span className="text-[9px] opacity-80 font-normal">Padrão</span>}
                                     </button>
                                 ))}
                             </div>

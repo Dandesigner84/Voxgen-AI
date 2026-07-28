@@ -49,6 +49,7 @@ const AppContent: React.FC = () => {
   const [isAddingSFX, setIsAddingSFX] = useState(false);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [globalGain, setGlobalGain] = useState(1.0);
+  const [narrationTab, setNarrationTab] = useState<'locucao' | 'boletim' | 'dialogo'>('locucao');
 
   const [isBgAudioEnabled, setIsBgAudioEnabled] = useState(isBackgroundPlaybackEnabled());
   const [showBgAudioModal, setShowBgAudioModal] = useState(false);
@@ -67,9 +68,27 @@ const AppContent: React.FC = () => {
     };
     window.addEventListener('voxgen-background-setting-changed', handleBgChange);
 
+    const handleBoletimCreated = (e: Event) => {
+      const customEvent = e as CustomEvent<any>;
+      const item = customEvent.detail;
+      if (item && item.generationStatus === 'success' && item.audioData) {
+        const audioItem: AudioItem = {
+          id: item.id,
+          text: `[Boletim ${item.niche}] ${item.scriptText}`,
+          voice: item.voice || 'Kore',
+          audioData: item.audioData,
+          createdAt: new Date(item.createdAt || Date.now()),
+          duration: item.duration || 60,
+        };
+        setHistory(prev => [audioItem, ...prev.filter(h => h.id !== item.id)]);
+      }
+    };
+    window.addEventListener('voxgen-boletim-created', handleBoletimCreated);
+
     return () => {
       cleanup();
       window.removeEventListener('voxgen-background-setting-changed', handleBgChange);
+      window.removeEventListener('voxgen-boletim-created', handleBoletimCreated);
     };
   }, []);
 
@@ -383,39 +402,48 @@ const AppContent: React.FC = () => {
          {mode === AppMode.Admin && <AdminPanel userRole={user.role} userEmail={user.email} />}
          {mode === AppMode.Narration && (
             <div className="max-w-6xl mx-auto px-4">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    <div className="lg:col-span-7 space-y-6">
-                        <VoiceControls 
-                          selectedVoice={selectedVoice} 
-                          onVoiceChange={setSelectedVoice} 
-                          selectedTone={selectedTone} 
-                          onToneChange={setSelectedTone} 
-                          useMusic={useMusic} 
-                          onMusicChange={setUseMusic} 
-                          energy={energy}
-                          onEnergyChange={setEnergy}
-                          ducking={ducking}
-                          onDuckingChange={setDucking}
-                          userEmail={user.email} 
-                        />
-                        <div className="min-h-[200px]">
-                            <TextInput value={text} onChange={setText} disabled={processing.isGeneratingAudio} selectedTone={selectedTone} onOptimize={handleOptimizeText} isOptimizing={processing.isEnhancing} onAutoSFX={handleAutoSFX} isAddingSFX={isAddingSFX} />
-                        </div>
-                        <div className="flex gap-4">
-                            <button onClick={handlePreviewNarration} disabled={processing.isGeneratingAudio || !text.trim()} className={`flex-1 py-4 rounded-xl font-bold flex justify-center items-center gap-2 border transition-all ${isPlayingPreview ? 'bg-red-500/20 border-red-500 text-red-200' : 'bg-slate-800 border-slate-700 text-indigo-300'}`}>
-                                {isPlayingPreview ? <><Square size={18} fill="currentColor" /> Parar</> : <><Play size={18} /> Preview</>}
-                            </button>
-                            <button onClick={handleGenerateNarration} disabled={processing.isGeneratingAudio || !text.trim() || isPlayingPreview} className="flex-[2] py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex justify-center items-center gap-2 shadow-lg disabled:opacity-50">
-                                {processing.isGeneratingAudio ? "Gerando..." : <><Sparkles size={18}/> Gerar Áudio</>}
-                            </button>
-                        </div>
-                    </div>
-                    <div className="lg:col-span-5">
-                        <div className="bg-slate-900/50 rounded-2xl p-4 border border-slate-800 h-[500px] overflow-y-auto custom-scrollbar">
-                            <AudioList items={history} audioContext={audioContextRef.current} />
-                        </div>
-                    </div>
-                </div>
+                <VoiceControls 
+                  selectedVoice={selectedVoice} 
+                  onVoiceChange={setSelectedVoice} 
+                  selectedTone={selectedTone} 
+                  onToneChange={setSelectedTone} 
+                  useMusic={useMusic} 
+                  onMusicChange={setUseMusic} 
+                  energy={energy}
+                  onEnergyChange={setEnergy}
+                  ducking={ducking}
+                  onDuckingChange={setDucking}
+                  userEmail={user.email} 
+                  audioContext={audioContextRef.current}
+                  initAudioContext={initAudioContext}
+                  userRole={user.role}
+                  activeTab={narrationTab}
+                  onTabChange={setNarrationTab}
+                  onAudioGenerated={(item) => setHistory(prev => [item, ...prev])}
+                />
+
+                {narrationTab === 'locucao' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                      <div className="lg:col-span-7 space-y-6">
+                          <div className="min-h-[200px]">
+                              <TextInput value={text} onChange={setText} disabled={processing.isGeneratingAudio} selectedTone={selectedTone} onOptimize={handleOptimizeText} isOptimizing={processing.isEnhancing} onAutoSFX={handleAutoSFX} isAddingSFX={isAddingSFX} />
+                          </div>
+                          <div className="flex gap-4">
+                              <button onClick={handlePreviewNarration} disabled={processing.isGeneratingAudio || !text.trim()} className={`flex-1 py-4 rounded-xl font-bold flex justify-center items-center gap-2 border transition-all ${isPlayingPreview ? 'bg-red-500/20 border-red-500 text-red-200' : 'bg-slate-800 border-slate-700 text-indigo-300'}`}>
+                                  {isPlayingPreview ? <><Square size={18} fill="currentColor" /> Parar</> : <><Play size={18} /> Preview</>}
+                              </button>
+                              <button onClick={handleGenerateNarration} disabled={processing.isGeneratingAudio || !text.trim() || isPlayingPreview} className="flex-[2] py-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex justify-center items-center gap-2 shadow-lg disabled:opacity-50">
+                                  {processing.isGeneratingAudio ? "Gerando..." : <><Sparkles size={18}/> Gerar Áudio</>}
+                              </button>
+                          </div>
+                      </div>
+                      <div className="lg:col-span-5">
+                          <div className="bg-slate-900/50 rounded-2xl p-4 border border-slate-800 h-[500px] overflow-y-auto custom-scrollbar">
+                              <AudioList items={history} audioContext={audioContextRef.current} />
+                          </div>
+                      </div>
+                  </div>
+                )}
             </div>
          )}
          {mode === AppMode.Music && <MusicStudio audioContext={audioContextRef.current} initAudioContext={initAudioContext} />}
