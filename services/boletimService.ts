@@ -183,24 +183,71 @@ export function getBoletimHistory(): BoletimHistoryItem[] {
 }
 
 /**
- * Busca metadados de vídeo do YouTube via noembed
+ * Extrai o ID do vídeo do YouTube a partir de qualquer formato de URL
+ */
+export function extractYouTubeVideoId(url: string): string | null {
+  if (!url) return null;
+  const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/|live\/)|youtu\.be\/)([^"&?\/\s]{11})/;
+  const match = url.trim().match(regExp);
+  return (match && match[1] && match[1].length === 11) ? match[1] : null;
+}
+
+/**
+ * Busca metadados de vídeo do YouTube via noembed/oembed com limpeza de URL e fallback resiliente
  */
 export async function fetchYouTubeMetadata(youtubeUrl: string): Promise<YouTubeMetadata> {
   if (!youtubeUrl.trim()) throw new Error("Link do YouTube inválido.");
-  
-  const cleanUrl = youtubeUrl.trim();
-  const oembedUrl = `https://noembed.com/embed?url=${encodeURIComponent(cleanUrl)}`;
-  
-  const res = await fetch(oembedUrl);
-  if (!res.ok) throw new Error("Não foi possível acessar as informações do vídeo.");
-  
-  const data = await res.json();
-  if (data.error) throw new Error("Vídeo do YouTube não encontrado ou privado.");
 
+  const videoId = extractYouTubeVideoId(youtubeUrl);
+  if (!videoId) {
+    throw new Error("Não foi possível identificar o ID do vídeo do YouTube. Verifique o link e tente novamente.");
+  }
+
+  // URL limpa sem parâmetros de playlist (&list=...) que podem travar o oEmbed
+  const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const defaultThumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+
+  try {
+    const oembedUrl = `https://noembed.com/embed?url=${encodeURIComponent(cleanUrl)}`;
+    const res = await fetch(oembedUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.error && data.title) {
+        return {
+          title: data.title,
+          thumbnailUrl: data.thumbnail_url || defaultThumbnail,
+          author: data.author_name || "Canal YouTube",
+          url: cleanUrl
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[YouTube Metadata] Falha no noembed:", e);
+  }
+
+  try {
+    const ytOembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`;
+    const res = await fetch(ytOembedUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.title) {
+        return {
+          title: data.title,
+          thumbnailUrl: data.thumbnail_url || defaultThumbnail,
+          author: data.author_name || "Canal YouTube",
+          url: cleanUrl
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[YouTube Metadata] Falha no youtube oembed:", e);
+  }
+
+  // Fallback de alta confiabilidade
   return {
-    title: data.title || "Fundo Musical YouTube",
-    thumbnailUrl: data.thumbnail_url || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80",
-    author: data.author_name || "Canal YouTube",
+    title: `Trilha YouTube (${videoId})`,
+    thumbnailUrl: defaultThumbnail,
+    author: "YouTube",
     url: cleanUrl
   };
 }
