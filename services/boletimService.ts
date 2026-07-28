@@ -183,73 +183,79 @@ export function getBoletimHistory(): BoletimHistoryItem[] {
 }
 
 /**
- * Extrai o ID do vídeo do YouTube a partir de qualquer formato de URL
+ * Extrai o ID do vídeo do YouTube a partir de qualquer formato de URL (vídeos, playlists, shorts, links encurtados)
  */
 export function extractYouTubeVideoId(url: string): string | null {
   if (!url) return null;
-  const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/|live\/)|youtu\.be\/)([^"&?\/\s]{11})/;
-  const match = url.trim().match(regExp);
-  return (match && match[1] && match[1].length === 11) ? match[1] : null;
+  const clean = url.trim();
+
+  // 1. Padrão de vídeo direto (watch?v=, youtu.be/, shorts/, embed/, live/)
+  const vMatch = clean.match(/(?:v=|v\/|embed\/|shorts\/|live\/|youtu\.be\/)([^"&?\/\s]{11})/i);
+  if (vMatch && vMatch[1]) return vMatch[1];
+
+  // 2. Parâmetro de lista/playlist list=
+  const listMatch = clean.match(/[?&]list=([^"&?\/\s]+)/i);
+  if (listMatch && listMatch[1]) return listMatch[1];
+
+  // 3. Fallback genérico para qualquer sequência de 11 caracteres alfanuméricos
+  const generalMatch = clean.match(/([a-zA-Z0-9_-]{11})/);
+  if (generalMatch && generalMatch[1]) return generalMatch[1];
+
+  return null;
 }
 
 /**
- * Busca metadados de vídeo do YouTube via noembed/oembed com limpeza de URL e fallback resiliente
+ * Busca metadados de vídeo do YouTube com fallback instantâneo resiliente (estilo Smart Player)
  */
 export async function fetchYouTubeMetadata(youtubeUrl: string): Promise<YouTubeMetadata> {
-  if (!youtubeUrl.trim()) throw new Error("Link do YouTube inválido.");
-
-  const videoId = extractYouTubeVideoId(youtubeUrl);
-  if (!videoId) {
-    throw new Error("Não foi possível identificar o ID do vídeo do YouTube. Verifique o link e tente novamente.");
+  const clean = youtubeUrl.trim();
+  if (!clean) {
+    throw new Error("Insira um link válido do YouTube.");
   }
 
-  // URL limpa sem parâmetros de playlist (&list=...) que podem travar o oEmbed
-  const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const defaultThumbnail = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  const videoId = extractYouTubeVideoId(clean);
+  const isPlaylistOnly = clean.includes('list=') && !clean.includes('v=') && !clean.includes('youtu.be/');
 
-  try {
-    const oembedUrl = `https://noembed.com/embed?url=${encodeURIComponent(cleanUrl)}`;
-    const res = await fetch(oembedUrl);
-    if (res.ok) {
-      const data = await res.json();
-      if (!data.error && data.title) {
-        return {
-          title: data.title,
-          thumbnailUrl: data.thumbnail_url || defaultThumbnail,
-          author: data.author_name || "Canal YouTube",
-          url: cleanUrl
-        };
-      }
-    }
-  } catch (e) {
-    console.warn("[YouTube Metadata] Falha no noembed:", e);
-  }
+  const cleanUrl = videoId
+    ? (isPlaylistOnly ? `https://www.youtube.com/playlist?list=${videoId}` : `https://www.youtube.com/watch?v=${videoId}`)
+    : clean;
 
-  try {
-    const ytOembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`;
-    const res = await fetch(ytOembedUrl);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.title) {
-        return {
-          title: data.title,
-          thumbnailUrl: data.thumbnail_url || defaultThumbnail,
-          author: data.author_name || "Canal YouTube",
-          url: cleanUrl
-        };
-      }
-    }
-  } catch (e) {
-    console.warn("[YouTube Metadata] Falha no youtube oembed:", e);
-  }
+  const defaultThumbnail = videoId && !videoId.startsWith('PL')
+    ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+    : `https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80`;
 
-  // Fallback de alta confiabilidade
-  return {
-    title: `Trilha YouTube (${videoId})`,
+  const fallbackMeta: YouTubeMetadata = {
+    title: videoId ? `Trilha YouTube (${videoId})` : "Áudio do YouTube",
     thumbnailUrl: defaultThumbnail,
     author: "YouTube",
     url: cleanUrl
   };
+
+  // Tenta oEmbed assíncrono com timeout curto de 1.5s
+  try {
+    const oembedUrl = `https://noembed.com/embed?url=${encodeURIComponent(cleanUrl)}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+
+    const res = await fetch(oembedUrl, { signal: controller.signal }).catch(() => null);
+    clearTimeout(timeoutId);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && !data.error && data.title) {
+        return {
+          title: data.title,
+          thumbnailUrl: data.thumbnail_url || defaultThumbnail,
+          author: data.author_name || "Canal YouTube",
+          url: cleanUrl
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[YouTube Metadata] Usando metadados diretos:", e);
+  }
+
+  return fallbackMeta;
 }
 
 /**

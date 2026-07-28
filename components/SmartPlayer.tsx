@@ -645,16 +645,25 @@ const SmartPlayer: React.FC<SmartPlayerProps> = ({ audioContext, initAudioContex
   const addWebLink = () => {
       const trimmedInput = webInput.trim();
       const ytRegExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=|shorts\/|live\/)|youtu\.be\/)([^"&?\/\s]{11})/;
+      const ytListRegExp = /[?&]list=([^"&?\/\s]+)/;
       const spotifyRegExp = /open\.spotify\.com\/(track|album|playlist|episode)\/([a-zA-Z0-9]+)/;
-      if (trimmedInput.match(ytRegExp)) {
-          const id = trimmedInput.match(ytRegExp)![1];
+
+      const ytMatch = trimmedInput.match(ytRegExp);
+      const ytListMatch = trimmedInput.match(ytListRegExp);
+
+      if (ytMatch && ytMatch[1]) {
+          const id = ytMatch[1];
           setPlaylist(prev => [...prev, { id: crypto.randomUUID(), type: 'youtube', name: `YouTube Faixa (${id})`, src: id, thumbnail: `https://img.youtube.com/vi/${id}/0.jpg` }]);
+          setWebInput('');
+      } else if (ytListMatch && ytListMatch[1]) {
+          const listId = ytListMatch[1];
+          setPlaylist(prev => [...prev, { id: crypto.randomUUID(), type: 'youtube', name: `YouTube Playlist (${listId.substring(0, 8)}...)`, src: listId, thumbnail: `https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&q=80` }]);
           setWebInput('');
       } else if (trimmedInput.match(spotifyRegExp)) {
           const match = trimmedInput.match(spotifyRegExp)!;
           setPlaylist(prev => [...prev, { id: crypto.randomUUID(), type: 'spotify', name: `Spotify ${match[1]}`, src: `https://open.spotify.com/embed/${match[1]}/${match[2]}?utm_source=generator&theme=0`, thumbnail: '' }]);
           setWebInput('');
-      } else { alert("Link inválido ou não suportado. Use links diretos de vídeo do YouTube ou faixas do Spotify."); }
+      } else { alert("Link inválido ou não suportado. Use links diretos de vídeo/playlist do YouTube ou faixas do Spotify."); }
   };
 
   const getSpotifySrc = () => {

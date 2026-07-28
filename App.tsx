@@ -398,7 +398,7 @@ const AppContent: React.FC = () => {
             <SmartPlayer audioContext={audioContextRef.current} initAudioContext={initAudioContext} narrationHistory={history} userRole={user.role} />
          </div>
 
-         {mode === AppMode.Home && <Home onSelectMode={setMode} userRole={user.role} />}
+         {mode === AppMode.Home && <Home onSelectMode={setMode} userRole={user.role} userEmail={user.email} onLogout={handleLogout} />}
          {mode === AppMode.Admin && <AdminPanel userRole={user.role} userEmail={user.email} />}
          {mode === AppMode.Narration && (
             <div className="max-w-6xl mx-auto px-4">

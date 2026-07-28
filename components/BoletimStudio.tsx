@@ -48,8 +48,9 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
   initAudioContext,
   userRole = 'user'
 }) => {
+  const currentRole: UserRole = userRole as UserRole;
   const [config, setConfig] = useState<BoletimConfig>(loadBoletimConfig());
-  const [usage, setUsage] = useState(getDailyBoletimUsage(userRole));
+  const [usage, setUsage] = useState(getDailyBoletimUsage(currentRole));
   const [history, setHistory] = useState<BoletimHistoryItem[]>(getBoletimHistory());
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -68,9 +69,9 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
   const autoTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setUsage(getDailyBoletimUsage(userRole));
+    setUsage(getDailyBoletimUsage(currentRole));
     setHistory(getBoletimHistory());
-  }, [userRole]);
+  }, [currentRole]);
 
   // Salva config sempre que alterar
   const handleConfigChange = (updated: Partial<BoletimConfig>) => {
@@ -88,7 +89,7 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
       console.log(`[Boletim IA] Automação ativada! Verificando a cada ${config.intervalMinutes} minutos.`);
 
       autoTimerRef.current = window.setInterval(async () => {
-        const currentUsage = getDailyBoletimUsage(userRole);
+        const currentUsage = getDailyBoletimUsage(currentRole);
         if (currentUsage.count >= currentUsage.maxLimit) {
           console.warn("[Boletim IA] Limite diário atingido na automação. Pausando execuções automáticas.");
           return;
@@ -97,8 +98,8 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
         try {
           console.log("[Boletim IA] Executando boletim automático de rotina...");
           const ctx = initAudioContext();
-          await executeBoletimGeneration(config, ctx, userRole);
-          setUsage(getDailyBoletimUsage(userRole));
+          await executeBoletimGeneration(config, ctx, currentRole);
+          setUsage(getDailyBoletimUsage(currentRole));
           setHistory(getBoletimHistory());
         } catch (e) {
           console.error("[Boletim IA] Erro no timer automático:", e);
@@ -109,7 +110,7 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
     return () => {
       if (autoTimerRef.current) clearInterval(autoTimerRef.current);
     };
-  }, [config.enabled, config.intervalMinutes, userRole, initAudioContext, config]);
+  }, [config.enabled, config.intervalMinutes, currentRole, initAudioContext, config]);
 
   // Busca metadados do YouTube
   const handleFetchYouTube = async () => {
@@ -160,7 +161,7 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
     setErrorMessage(null);
     setStatusMessage(null);
 
-    const currentUsage = getDailyBoletimUsage(userRole);
+    const currentUsage = getDailyBoletimUsage(currentRole);
     if (currentUsage.count >= currentUsage.maxLimit) {
       setErrorMessage(
         `Você atingiu o limite diário de ${currentUsage.maxLimit} boletins automáticos. O limite será renovado automaticamente no próximo dia ou poderá ser ampliado conforme seu plano.`
@@ -173,8 +174,8 @@ export const BoletimStudio: React.FC<BoletimStudioProps> = ({
       const ctx = initAudioContext();
       if (ctx.state === 'suspended') await ctx.resume();
 
-      const item = await executeBoletimGeneration(config, ctx, userRole);
-      setUsage(getDailyBoletimUsage(userRole));
+      const item = await executeBoletimGeneration(config, ctx, currentRole);
+      setUsage(getDailyBoletimUsage(currentRole));
       setHistory(getBoletimHistory());
       setStatusMessage(`✨ Boletim "${item.niche}" gerado com sucesso e enviado para o Smart Play na fila "📰 Boletins IA"!`);
     } catch (err: any) {
